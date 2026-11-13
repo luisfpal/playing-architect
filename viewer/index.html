@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Casa: recorrido 3D</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e12; }
+  canvas { display: block; }
+  .glass { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #e8edf3;
+    background: rgba(16,20,26,.78); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; backdrop-filter: blur(8px); }
+  kbd { font: 11px/1 ui-monospace, Menlo, monospace; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 4px; padding: 2px 5px; }
+  button { font: inherit; color: #e8edf3; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,.2); }
+  button.primary { background: #2f7cf6; border-color: #2f7cf6; }
+  #help { position: fixed; left: 12px; bottom: 12px; z-index: 10; padding: 10px 12px; max-width: 300px; }
+  #help h2 { font-size: 13px; margin: 0 0 4px; }
+  #help .row { display: flex; justify-content: space-between; gap: 14px; color: #b9c5d3; }
+  #help.mini .row { display: none; }
+  body.touch #help .desk, body:not(.touch) #help .tch { display: none; }
+  #hud { position: fixed; top: 12px; left: 12px; z-index: 10; padding: 8px 12px; }
+  #hud b { font-weight: 600; }
+  #hud .sub { color: #a9b6c6; font-size: 12px; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+    background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.5); display: none; z-index: 9; pointer-events: none; }
+  #menu { position: fixed; inset: 0; z-index: 15; display: none; place-items: center; background: rgba(8,10,14,.6); }
+  #menu .box { padding: 16px 18px; width: min(760px, 92vw); max-height: 86vh; overflow: auto; }
+  #menu h2 { margin: 0 0 8px; font-size: 16px; }
+  #menu h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #a9b6c6; }
+  #rooms { display: flex; flex-wrap: wrap; gap: 6px; }
+  #actions { display: flex; gap: 8px; margin-bottom: 4px; }
+  #loading { position: fixed; left: 50%; bottom: 40%; transform: translateX(-50%); z-index: 12; width: 280px; text-align: center; padding: 12px; }
+  #bar { height: 4px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  #bar > i { display: block; height: 100%; width: 0; background: #2f7cf6; }
+  #error { position: fixed; inset: 0; display: none; place-items: center; z-index: 20; background: rgba(8,10,14,.94);
+    color: #e8edf3; font: 14px/1.6 -apple-system, sans-serif; text-align: center; padding: 24px; }
+  #bar2 { position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px; }
+  #bar2 button { min-height: 36px; }
+  #minimap { position: fixed; top: 56px; right: 12px; z-index: 9; padding: 0; display: none; width: 112px; height: 186px; cursor: pointer; }
+  #floors { display: flex; gap: 4px; margin: 0 0 6px; }
+  #floors button { padding: 3px 9px; }
+  #floors button.on { background: #2f7cf6; border-color: #2f7cf6; }
+  #plan { height: min(467px, calc(100dvh - 150px)); width: auto; max-width: 280px; aspect-ratio: 12 / 20; display: block; border-radius: 8px; background: rgba(0,0,0,.25); cursor: pointer; }
+  #menu .cols { display: flex; gap: 16px; flex-wrap: wrap; }
+  #menu .cols > div { flex: 1 1 260px; }
+  #floorChip { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 9px; background: #2f7cf6; font-size: 11px; font-weight: 600; }
+  #touch { position: fixed; inset: 0; z-index: 8; display: none; pointer-events: none; }
+  #stickBase { position: fixed; display: none; width: 112px; height: 112px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); }
+  #stickKnob { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.55); }
+  #actBtn { position: fixed; right: 22px; bottom: 26px; width: 76px; height: 76px; border-radius: 50%; pointer-events: auto; touch-action: none; font-weight: 600;
+    background: rgba(47,124,246,.8); border: 2px solid rgba(255,255,255,.6); }
+  #touchHint { position: fixed; left: 50%; top: 50%; transform: translate(-50%, 40px); z-index: 8; display: none; pointer-events: none; padding: 6px 12px; text-align: center; }
+  canvas { touch-action: none; }
+  @media (max-width: 700px), (pointer: coarse) {
+    body.touch #help { left: 8px; bottom: auto; top: 56px; max-width: 200px; padding: 6px 8px; font-size: 12px; }
+    body.touch.walking #help { display: none; }
+    #hud { top: 8px; left: 8px; padding: 5px 9px; max-width: 46vw; }
+    #hud .sub { font-size: 11px; }
+    #bar2 { top: 8px; right: 8px; }
+    #minimap { top: 50px; right: 8px; width: 84px; height: 140px; }
+    #menu .box { padding: 12px; max-height: 92vh; }
+    #menu button { min-height: 38px; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/",
+    "three/examples/jsm/": "./vendor/three/examples/jsm/",
+    "@dimforge/rapier3d-compat": "./vendor/rapier/rapier.mjs",
+    "postprocessing": "./vendor/postprocessing/postprocessing.esm.js",
+    "n8ao": "./vendor/n8ao/N8AO.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud" class="glass"><b id="roomName">Cargando</b><span id="floorChip"></span><div class="sub" id="levelName"></div></div>
+<div id="bar2"><button id="planbtn" title="Plano y habitaciones (M)">Plano</button><button id="modebtn" class="primary">Caminar (Tab)</button></div>
+<canvas id="minimap" class="glass" width="168" height="280" title="Plano: toca para abrir"></canvas>
+
+<div id="help" class="glass">
+  <h2>Cómo moverse <span style="color:#a9b6c6;font-weight:400">(H: ocultar)</span></h2>
+  <div class="row desk"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>caminar (Shift corre)</span></div>
+  <div class="row desk"><span>ratón</span><span>mirar (clic para capturar)</span></div>
+  <div class="row desk"><span><kbd>E</kbd> o clic</span><span>abrir puertas y cajones</span></div>
+  <div class="row desk"><span><kbd>M</kbd> / <kbd>Esc</kbd></span><span>plano y habitaciones</span></div>
+  <div class="row desk"><span><kbd>Tab</kbd></span><span>fuera o caminar</span></div>
+  <div class="row desk"><span><kbd>R</kbd></span><span>volver al último punto seguro</span></div>
+  <div class="row tch"><span>izquierda</span><span>mover (arrastra)</span></div>
+  <div class="row tch"><span>derecha</span><span>mirar (arrastra)</span></div>
+  <div class="row tch"><span>botón Abrir</span><span>puertas y cajones</span></div>
+  <div class="row tch"><span>Plano</span><span>ir a una habitación</span></div>
+</div>
+
+<div id="cross"></div>
+
+<div id="menu">
+  <div class="box glass">
+    <h2>Casa: ir a una habitación</h2>
+    <div id="actions">
+      <button id="resume" class="primary">Seguir caminando</button>
+      <button id="outside">Ver desde afuera</button>
+    </div>
+    <div class="cols">
+      <div><div id="floors"></div><canvas id="plan" width="360" height="600"></canvas></div>
+      <div>
+        <h3>Planta baja</h3><div id="rooms0" class="rooms"></div>
+        <h3>Planta alta</h3><div id="rooms1" class="rooms"></div>
+        <h3>Terraza</h3><div id="rooms2" class="rooms"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="loading" class="glass"><div id="loadText">Cargando casa.glb</div><div id="bar"><i></i></div></div>
+<div id="error"><div><h2>No se pudo cargar el modelo</h2>
+  <p>Revise la conexión y recargue la página.</p>
+  <p id="errorDetail"></p></div></div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
