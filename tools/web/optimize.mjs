@@ -1,8 +1,8 @@
 // Web delivery of the scene: the raw Blender export was 189 MB and took minutes to load on a phone. Rule: do not nerf the model.
 //
-//   node tools/web/optimize.mjs build/casa.glb build/web/casa.glb          (make web-glb)
+//   node tools/web/optimize.mjs build/house.glb build/web/house.glb          (make web-glb)
 //
-// build/casa.glb stays the uncompressed artifact every check reads; this writes the copy the site serves. Same
+// build/house.glb stays the uncompressed artifact every check reads; this writes the copy the site serves. Same
 // triangles, same nodes, names and extras; nothing is simplified. Steps:
 //   1. prune unused vertex attributes (meshes carried up to 8 UV sets that no material reads) and unused data;
 //   2. dedup identical accessors, textures and materials; weld bit-identical vertices;
@@ -13,7 +13,7 @@
 //      wall run; normals 12 bit, 'medium' filter: the 8-bit 'high' filter showed faint banding on the truck paint). Each mesh first moves to an unnamed child of its node, so the dequantization transform lands on that
 //      child and every named node keeps its exact matrix (the viewer turns cabinet doors about their node origin).
 //      The child carries extras {mesh_of: 1}; viewer/main.js reads the shadow flag from its parent.
-// tools/web/compare_shots.py proves the result looks the same as build/casa.glb at fixed views in the real viewer.
+// tools/web/compare_shots.py proves the result looks the same as build/house.glb at fixed views in the real viewer.
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { prune, dedup, weld, textureCompress, meshopt } from '@gltf-transform/functions';
@@ -22,7 +22,7 @@ import sharp from 'sharp';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [src = 'build/casa.glb', out = 'build/web/casa.glb'] = process.argv.slice(2);
+const [src = 'build/house.glb', out = 'build/web/house.glb'] = process.argv.slice(2);
 const LEVEL = process.env.MESHOPT_LEVEL ?? 'medium';   // 'high' adds the octahedral 8-bit normal filter (lossy, dropped)
 const QPOS = Number(process.env.QPOS ?? 16);
 const QNRM = Number(process.env.QNRM ?? 12);

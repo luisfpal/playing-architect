@@ -1,6 +1,6 @@
 # Credits
 
-The house, the viewer and the pipeline are original work (MIT, see LICENSE). The scene also contains third-party
+The house, the viewer and the pipeline are my own work (MIT, see LICENSE). The scene also contains third-party
 models, textures and libraries under their own licences.
 
 ## CC BY 4.0 models (Sketchfab)

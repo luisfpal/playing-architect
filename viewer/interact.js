@@ -1,11 +1,11 @@
 // Openable parts: drawers slide, doors swing, the fridge opens. Contract: docs/glb_contract.md ("Openable parts").
 // Wiring (one line in main.js, after createPhysics): initInteract(scene, camera, renderer, { world: world.phys.world });
-// Triggers: E key, mouse click while walking, a tap on the canvas, or window.casaInteract.interact() (the touch button).
+// Triggers: E key, mouse click while walking, a tap on the canvas, or window.houseInteract.interact() (the touch button).
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 const NAME = /^(.*)__(drawer|door|fridge_door|window)_(\d+)$/;
-const NOUN = { drawer: 'cajón', door: 'puerta', fridge_door: 'puerta de la refrigeradora', window: 'ventana' };
+const NOUN = { drawer: 'drawer', door: 'door', fridge_door: 'fridge door', window: 'window' };
 const REACH = 2.4, ASSIST_REACH = 1.8, ASSIST_COS = Math.cos(THREE.MathUtils.degToRad(25));
 const SECONDS = { drawer: 0.4, door: 0.7, fridge_door: 0.7, window: 0.7 };
 const PLAYER_R = 0.3, PLAYER_H = 1.7;
@@ -35,7 +35,7 @@ export function initInteract(scene, camera, renderer, opts = {}) {
     const m = NAME.exec(o.name);
     const kind = m ? m[2] : u.openable;
     if (!kind || !NOUN[kind]) return;
-    if (u.role === 'hoja_servicio') { closeServiceLeaf(o, u); return; }
+    if (u.role === 'service_leaf') { closeServiceLeaf(o, u); return; }
     const e = makeEntry(o, kind, m ? m[1] : o.name);
     entries.push(e);
     o.traverse((c) => { if (c.isMesh) { byMesh.set(c.uuid, e); meshes.push(c); } }); // parents come first, so deeper entries win
@@ -123,7 +123,7 @@ export function initInteract(scene, camera, renderer, opts = {}) {
   /** True when the player stands where the leaf would be at state t (so it must not move there). A window never traps:
    * its sash swings above the sill and a person opening it stands in front, where an outward sash passes. */
   function wouldTrap(e, t) {
-    const f = window.casa?.player?.feet;
+    const f = window.house?.player?.feet;
     if (e.kind === 'window' || !e.collider || !f) return false;
     const pose = colliderPose(e, t);
     const inv = new THREE.Matrix4().compose(pose.c, pose.q, new THREE.Vector3(1, 1, 1)).invert();
@@ -170,7 +170,7 @@ export function initInteract(scene, camera, renderer, opts = {}) {
   function toggle(e) {
     if (!e) return false;
     const next = e.target ? 0 : 1;
-    if (wouldTrap(e, next)) { flash('Estás en el paso'); return false; }
+    if (wouldTrap(e, next)) { flash('You are in the way'); return false; }
     e.from = e.t;
     e.target = next;
     e.started = clock();
@@ -187,7 +187,7 @@ export function initInteract(scene, camera, renderer, opts = {}) {
       e.apply(e.t);
       if (e.t === e.target) {
         e.node.updateMatrixWorld(true);
-        if (e.collider && wouldTrap(e, e.target)) { e.target = e.from; e.from = e.t; e.started = now; flash('Algo estorba'); continue; }
+        if (e.collider && wouldTrap(e, e.target)) { e.target = e.from; e.from = e.t; e.started = now; flash('Something is in the way'); continue; }
         syncCollider(e);
       }
     }
@@ -206,12 +206,12 @@ export function initInteract(scene, camera, renderer, opts = {}) {
   document.body.appendChild(hint);
   let flashUntil = 0, hovered = null, pointer = null;
   function flash(text) { hint.textContent = text; hint.style.display = 'block'; flashUntil = clock() + 1.2; }
-  const walking = () => window.casa?.state === 'walk';
+  const walking = () => window.house?.state === 'walk';
   setInterval(() => {
     hovered = walking() ? aim(!touch && pointer ? pointer : null) : null;
     if (clock() < flashUntil) return;
     if (!hovered) { hint.style.display = 'none'; return; }
-    const verb = hovered.target ? 'Cerrar' : 'Abrir';
+    const verb = hovered.target ? 'Close' : 'Open';
     hint.textContent = `${touch ? '' : '[E] '}${verb} ${NOUN[hovered.kind]}`;
     hint.style.display = 'block';
   }, 120);
@@ -243,14 +243,14 @@ export function initInteract(scene, camera, renderer, opts = {}) {
   // ---------- hook for the touch button and the tests ----------
   const worldBox = (e) => new THREE.Box3().setFromObject(e.node);
   const find = (name) => entries.find((e) => e.name === name);
-  window.casaInteract = {
+  window.houseInteract = {
     interact: () => interact(),
     get target() { return hovered?.name ?? null; },
     /** True when E would refuse this part: its next pose would stand where the player is. The tests use it to reject
      *  a hint-named spot the game itself would not act on (a drawer whose slide reaches the player's feet). */
     blocked: (name) => { const e = find(name); return !!(e && wouldTrap(e, e.target ? 0 : 1)); },
     get settled() { return entries.every((e) => e.t === e.target); },
-    list: () => entries.map((e) => ({ name: e.name, kind: e.kind, group: e.group, open: e.target === 1, t: e.t, hasCollider: !!e.collider, slide: e.node.userData.slide ?? null, swing: e.node.userData.swing ?? null, hinge: e.node.userData.hinge ?? null, closeDeg: e.node.userData.close_deg ?? null, slideX: e.node.userData.slide_x ?? null, slideY: e.node.userData.slide_y ?? null, openDeg: e.node.userData.open_deg ?? null, apertura: e.node.userData.apertura ?? null, level: e.node.userData.level ?? null })),
+    list: () => entries.map((e) => ({ name: e.name, kind: e.kind, group: e.group, open: e.target === 1, t: e.t, hasCollider: !!e.collider, slide: e.node.userData.slide ?? null, swing: e.node.userData.swing ?? null, hinge: e.node.userData.hinge ?? null, closeDeg: e.node.userData.close_deg ?? null, slideX: e.node.userData.slide_x ?? null, slideY: e.node.userData.slide_y ?? null, openDeg: e.node.userData.open_deg ?? null, opening: e.node.userData.opening ?? null, level: e.node.userData.level ?? null })),
     /** World-space centre of the part's bounds and its yaw about the vertical axis (radians). */
     pose: (name) => {
       const e = find(name);
@@ -282,5 +282,5 @@ export function initInteract(scene, camera, renderer, opts = {}) {
     colliders: () => entries.filter((e) => e.collider).map((e) => ({ name: e.name, t: e.collider.translation(), q: e.collider.rotation(), half: e.collider.halfExtents(), stale: !!e.stale })),
     meshCount: (name) => { let n = 0; find(name).node.traverse((c) => { if (c.isMesh) n++; }); return n; },
   };
-  return window.casaInteract;
+  return window.houseInteract;
 }

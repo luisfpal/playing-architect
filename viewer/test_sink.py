@@ -34,10 +34,10 @@ def run(out):
             page = browser.new_page(viewport=vp)
             page.on("pageerror", lambda e: print("pageerror:", e))
             page.goto(f"http://127.0.0.1:{srv.server_address[1]}/viewer/index.html")
-            page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=120000)
+            page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=120000)
             page.wait_for_timeout(2000)
             d = Driver(page)
-            page.evaluate("casa.send('teleport', 'Cocina')")
+            page.evaluate("house.send('teleport', 'Kitchen')")
             page.wait_for_timeout(2500)
             shoot(page, out, f"kitchen_spawn_{tag}", d, res)
             # a real-key walk to 1 m in front of the counter (counter front y 16.20, so y 15.20), then keep W down until the counter stops us

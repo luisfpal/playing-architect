@@ -1,8 +1,7 @@
 # Agent skills used on this project
 
-Short, generic versions of the instructions the coding agents followed. Each one is a `SKILL.md` that an agent
-(Cursor, Codex, Claude Code, or any tool that reads skill folders) loads before the matching kind of work.
-They are rewritten for publication: no accounts, machines or project-specific names.
+The instructions the coding agents followed. Each one is a `SKILL.md` that an agent (Cursor, Codex, Claude Code,
+or any tool that reads skill folders) loads before the matching kind of work.
 
 | Skill | When it applies |
 |---|---|

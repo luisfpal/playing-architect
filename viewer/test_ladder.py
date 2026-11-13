@@ -26,7 +26,7 @@ FACE_LADDER = math.pi / 2  # yaw that looks toward -x (glTF), into the ladder on
 
 
 def ladder(ev):
-    lad = ev("casa.byRole('escalera_gato')")
+    lad = ev("house.byRole('ladder')")
     assert len(lad) == 1, lad
     b = lad[0]
     return b, (b["min"][2] + b["max"][2]) / 2
@@ -34,54 +34,54 @@ def ladder(ev):
 
 def start(ev, b, zc, up=0.0):
     """Stand on the terrace 0.8 m in front of the ladder, facing it."""
-    ev(f"casa.place({b['max'][0] + 0.8}, {TERRACE + up}, {zc})")
-    ev(f"casa.setYaw({FACE_LADDER})")
+    ev(f"house.place({b['max'][0] + 0.8}, {TERRACE + up}, {zc})")
+    ev(f"house.setYaw({FACE_LADDER})")
 
 
 def physics(ev, rec, bad):
     b, zc = ladder(ev)
     start(ev, b, zc)
-    q = ev("casa.simHold(1, 0, 8)")
-    p = ev("casa.player")
+    q = ev("house.simHold(1, 0, 8)")
+    p = ev("house.player")
     deck = q["feet"][1]
     rec["climb_up"] = {"feet": [round(v, 3) for v in q["feet"]], "grounded": q["grounded"], "room": p["room"]}
     ok = abs(deck - 9.02) < 0.05 and q["grounded"] and q["feet"][0] < b["min"][0] - 0.2
     if not ok:
         bad.append(f"forward into the ladder does not reach and stand on the roof deck: {rec['climb_up']}")
     # walk on the deck toward the west party wall: stays on the deck, the guard rail stops the walk
-    q = ev("casa.simHold(1, 0, 8)")
+    q = ev("house.simHold(1, 0, 8)")
     rec["deck_walk"] = {"feet": [round(v, 3) for v in q["feet"]], "grounded": q["grounded"]}
     ok = abs(q["feet"][1] - deck) < 0.05 and q["grounded"] and q["feet"][0] > 0.2 and q["feet"][0] < 3.0
     if not ok:
         bad.append(f"walking on the roof deck: {rec['deck_walk']}")
     # the HUD names the deck (not the street) while the player stands on it
-    deck_room = ev("casa.player")["room"]
+    deck_room = ev("house.player")["room"]
     rec["deck_hud"] = deck_room
-    if deck_room != "Terraza: cubierta del lavado":
+    if deck_room != "Terrace: laundry roof deck":
         bad.append(f"HUD on the roof deck reads {deck_room!r}")
     # back to the ladder top, then over the edge: climbs down to the terrace and walks away
-    ev(f"casa.place({b['min'][0] - 0.6}, {deck}, {zc})")
-    ev(f"casa.setYaw({-FACE_LADDER})")
-    q = ev("casa.simHold(1, 0, 10)")
+    ev(f"house.place({b['min'][0] - 0.6}, {deck}, {zc})")
+    ev(f"house.setYaw({-FACE_LADDER})")
+    q = ev("house.simHold(1, 0, 10)")
     rec["climb_down_from_deck"] = {"feet": [round(v, 3) for v in q["feet"]], "grounded": q["grounded"]}
     ok = abs(q["feet"][1] - TERRACE) < 0.05 and q["grounded"] and q["feet"][0] > b["max"][0] + 0.5
     if not ok:
         bad.append(f"walking off the deck over the ladder does not climb down: {rec['climb_down_from_deck']}")
-    terrace_room = ev("casa.player")["room"]
+    terrace_room = ev("house.player")["room"]
     rec["terrace_hud"] = terrace_room
-    if terrace_room != "Terraza":
-        bad.append(f"HUD on the terrace floor reads {terrace_room!r}, not 'Terraza'")
+    if terrace_room != "Terrace":
+        bad.append(f"HUD on the terrace floor reads {terrace_room!r}, not 'Terrace'")
     # halfway up, back (S) descends
     start(ev, b, zc)
-    mid = ev("casa.simHold(1, 0, 2.2)")["feet"][1]
-    q = ev("casa.simHold(-1, 0, 6)")
+    mid = ev("house.simHold(1, 0, 2.2)")["feet"][1]
+    q = ev("house.simHold(-1, 0, 6)")
     rec["back_descends"] = {"mid_y": round(mid, 3), "end": [round(v, 3) for v in q["feet"]], "grounded": q["grounded"]}
     ok = mid > TERRACE + 1.0 and abs(q["feet"][1] - TERRACE) < 0.05 and q["grounded"]
     if not ok:
         bad.append(f"back from mid-ladder does not descend: {rec['back_descends']}")
     # walking past the ladder sideways does not grab it
     start(ev, b, zc)
-    q = ev("casa.simHold(0, 1, 1.5)")
+    q = ev("house.simHold(0, 1, 1.5)")
     rec["sideways_ignored"] = {"feet": [round(v, 3) for v in q["feet"]]}
     if abs(q["feet"][1] - TERRACE) > 0.05:
         bad.append(f"walking sideways past the ladder climbs it: {rec['sideways_ignored']}")
@@ -93,19 +93,19 @@ def keys(page, rec, bad):
     start(ev, b, zc)
     page.keyboard.down("KeyW")
     try:
-        page.wait_for_function("casa.player.feet[1] > 8.0", timeout=240000)
-        up = ev("casa.player.feet")[1]
+        page.wait_for_function("house.player.feet[1] > 8.0", timeout=240000)
+        up = ev("house.player.feet")[1]
     except Exception as e:  # noqa: BLE001
-        up = ev("casa.player.feet")[1]
+        up = ev("house.player.feet")[1]
         bad.append(f"real key W did not climb: {e}")
     page.keyboard.up("KeyW")
     page.keyboard.down("KeyS")
     try:
-        page.wait_for_function(f"casa.player.feet[1] < {TERRACE + 0.05}", timeout=240000)
+        page.wait_for_function(f"house.player.feet[1] < {TERRACE + 0.05}", timeout=240000)
     except Exception as e:  # noqa: BLE001
         bad.append(f"real key S did not descend: {e}")
     page.keyboard.up("KeyS")
-    rec["keys"] = {"up_to": round(up, 3), "back_to": round(ev("casa.player.feet")[1], 3)}
+    rec["keys"] = {"up_to": round(up, 3), "back_to": round(ev("house.player.feet")[1], 3)}
 
 
 def joystick(browser, port, rec, bad, errors):
@@ -114,9 +114,9 @@ def joystick(browser, port, rec, bad, errors):
     page = ctx.new_page()
     watch(page, errors)
     page.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0")
-    page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=240000)
-    page.evaluate("casa.send('enterWalk')")
-    page.wait_for_function('casa.state==="walk" && casa.player', timeout=60000)
+    page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=240000)
+    page.evaluate("house.send('enterWalk')")
+    page.wait_for_function('house.state==="walk" && house.player', timeout=60000)
     ev = page.evaluate
     b, zc = ladder(ev)
     start(ev, b, zc)
@@ -124,16 +124,16 @@ def joystick(browser, port, rec, bad, errors):
     base = ev("(() => { const r = document.querySelector('#stickBase').getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()")
     cx, cy = (base[0] + base[2]) / 2, (base[1] + base[3]) / 2
     res = {}
-    for name, dy, cond in (("up", -50, "casa.player.feet[1] > 7.4"), ("down", 50, f"casa.player.feet[1] < {TERRACE + 0.05}")):
+    for name, dy, cond in (("up", -50, "house.player.feet[1] > 7.4"), ("down", 50, f"house.player.feet[1] < {TERRACE + 0.05}")):
         touch.down(1, cx, cy)
         for s in range(1, 9):
             touch.move(1, cx, cy + dy * s / 8)
             time.sleep(0.03)
         try:
             page.wait_for_function(cond, timeout=240000)
-            res[name] = round(ev("casa.player.feet")[1], 3)
+            res[name] = round(ev("house.player.feet")[1], 3)
         except Exception as e:  # noqa: BLE001
-            res[name] = f"timeout at {ev('casa.player.feet')[1]:.2f}"
+            res[name] = f"timeout at {ev('house.player.feet')[1]:.2f}"
             bad.append(f"joystick {name} on the ladder: {e}")
         touch.up(1)
         time.sleep(0.3)
@@ -149,16 +149,16 @@ def main():
         page = browser.new_page(viewport={"width": 640, "height": 300})
         watch(page, errors)
         page.goto(f"http://127.0.0.1:{srv.server_address[1]}/viewer/index.html?ao=0")
-        page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=240000)
-        page.evaluate("casa.send('enterWalk')")
-        page.wait_for_function('casa.state==="walk" && casa.player', timeout=60000)
-        rec["ladders"] = page.evaluate("casa.info.ladders")
+        page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=240000)
+        page.evaluate("house.send('enterWalk')")
+        page.wait_for_function('house.state==="walk" && house.player', timeout=60000)
+        rec["ladders"] = page.evaluate("house.info.ladders")
         if rec["ladders"] != 1:
             bad.append(f"the GLB has {rec['ladders']} climbable ladders, want 1")
-        gates = page.evaluate("casa.byRole('puerta_seguridad').map((b) => b.name)")
+        gates = page.evaluate("house.byRole('security_door').map((b) => b.name)")
         rec["gate"] = gates
         # glTF node names carry underscores for spaces (the GLB export sanitises IFC names)
-        if [g.replace("_", " ") for g in gates] != ["Puerta de seguridad escalera gato"]:
+        if [g.replace("_", " ") for g in gates] != ["Ladder security door"]:
             bad.append(f"the GLB has gate nodes {gates}, want the ladder-top gate")
         physics(page.evaluate, rec, bad)
         keys(page, rec, bad)
