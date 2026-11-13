@@ -7,8 +7,9 @@ const HALF = (HEIGHT - 2 * RADIUS) / 2;
 export const STEP = 1 / 60;
 // R9: the eye follows the feet with this rate (1/s), so a stair riser climbed by the capsule's autostep reads as a smooth glide
 export const EYE_RATE = 7;
-const GRAVITY = 9.81, WALK = 1.6, RUN = 3.0, ACCEL = 14, BRAKE = 22; // m/s^2: reaches walking speed in ~0.12 s, stops in ~0.08 s
-// R10-7 fixed ladders (GLB role escalera_gato, extras ladder_top and ladder_front): moving into the ladder climbs, moving away
+const GRAVITY = 9.81, ACCEL = 14, BRAKE = 22; // m/s^2: reaches walking speed in ~0.14 s, stops in ~0.09 s
+export const WALK = 2.0, RUN = 3.5; // m/s
+// R10-7 fixed ladders (GLB role ladder, extras ladder_top and ladder_front): moving into the ladder climbs, moving away
 // descends, at the top the climber steps onto the deck, and walking off the deck over the ladder climbs down. 0.30 m from the face.
 const CLIMB = 0.8, CLIMB_OFF = RADIUS + 0.05;
 
@@ -26,7 +27,7 @@ export async function createPhysics(root) {
   const inv = new THREE.Matrix4(), rel = new THREE.Matrix4(), v = new THREE.Vector3();
 
   root.traverse((o) => {
-    if (o.userData.role === 'escalera_gato' && o.userData.ladder_top !== undefined) {
+    if (o.userData.role === 'ladder' && o.userData.ladder_top !== undefined) {
       const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3());
       const [fx, fy] = String(o.userData.ladder_front ?? '1,0').split(',').map(Number);
       const n = new THREE.Vector2(fx, -fy).normalize(), t = new THREE.Vector2(-n.y, n.x); // IFC (x, y) -> glTF (x, -z)
@@ -81,6 +82,9 @@ export async function createPhysics(root) {
   kcc.setMinSlopeSlideAngle(Math.PI * 50 / 180);
   kcc.setSlideEnabled(true);
   kcc.setUp({ x: 0, y: 1, z: 0 });
+  // Measured: with Rapier's default nudge (1e-4) the capsule snags on the seams between ground triangles about one step in
+  // fifteen and moves ~0 that step, so walking stutters at any frame rate. 1e-3 pushes it off the seam: even steps.
+  kcc.setNormalNudgeFactor(0.001);
   world.step();
 
   // Colliders that count for the player: everything except a door leaf still in its open pose.
@@ -122,7 +126,8 @@ export async function createPhysics(root) {
     climbing: null, // the ladder being climbed, or null
     // One fixed step. input: forward/right in [-1,1], run flag. Returns metres moved horizontally.
     step(input) {
-      const sp = input.run ? RUN : WALK;
+      const r = input.run === true ? 1 : Math.min(1, Math.max(0, +input.run || 0)); // true/false from keys, 0..1 from the stick
+      const sp = WALK + (RUN - WALK) * r;
       const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
       const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
       let dx = fx * input.forward + rx * input.right, dz = fz * input.forward + rz * input.right;
@@ -138,7 +143,16 @@ export async function createPhysics(root) {
       const want = { x: player.vx * STEP, y: player.vy * STEP, z: player.vz * STEP };
       if (leaves.length && leafSync++ % 15 === 0) syncLeaves();
       kcc.computeColliderMovement(collider, want);
-      const m = kcc.computedMovement();
+      let m = kcc.computedMovement();
+      // Seam snag: on flat ground the capsule sometimes stops on the edge between two floor triangles and moves ~0 for a step,
+      // which reads as a stutter at any frame rate. When every contact is floor (normal up) and the move came out under half
+      // the wanted one, retry once from 1 cm higher; snap-to-ground puts the capsule back on the floor.
+      const wantH = Math.hypot(want.x, want.z);
+      if (player.grounded && wantH > 1e-4 && Math.hypot(m.x, m.z) < 0.5 * wantH) {
+        let floorOnly = kcc.numComputedCollisions() > 0;
+        for (let i = 0, k = kcc.numComputedCollisions(); i < k && floorOnly; i++) { const c = kcc.computedCollision(i); if (!c || c.normal1.y < 0.7) floorOnly = false; }
+        if (floorOnly) { kcc.computeColliderMovement(collider, { x: want.x, y: 0.01, z: want.z }); m = kcc.computedMovement(); }
+      }
       player.blockedBy.length = 0;
       for (let i = 0, n = kcc.numComputedCollisions(); i < n; i++) {
         const c = kcc.computedCollision(i)?.collider;
