@@ -28,9 +28,10 @@ a minimap and touch controls.
 - **The viewer** is plain ES modules with no build step: three.js for rendering, Rapier for the character controller and
   colliders. Its modes (loading, orbit, walk, paused, error) are a statechart ([docs/statecharts.md](docs/statecharts.md)),
   and a test fails if the code and the diagram disagree.
-- **The agents** (Cursor, Claude Code, and DeepSeek for bulk edits) worked in review rounds. Each round
+- **The agents.** I ran them (Cursor, Claude Code, and DeepSeek for bulk edits) in review rounds. Each round
   ended the same way: rebuild, render fixed views of every room and look at the pictures, then walk the house for real
-  in headless Chromium. Plenty of bugs only showed up in the pictures, like a washer door that opened onto a flat panel.
+  in headless Chromium. Many bugs only showed up there: a washer door that opened onto a flat panel, or a bathroom you could walk into
+  and not get out of.
   The instructions they followed are in [skills/](skills/).
 - **Loading.** About 1 million triangles in a 38 MB GLB. Only lossless steps (meshopt, lossless WebP, pruned
   attributes), checked by rendering the same views before and after ([tools/web/](tools/web/)).
@@ -60,7 +61,8 @@ software rendering, so they take minutes, not seconds.
 
 ## Limits
 
-It's a model, not an engineered building: structure, plumbing and wiring are sketched, not designed.
+Not an engineered building: structure, plumbing and wiring are placeholders, and the checks cover geometry and
+reachability only.
 
 Code is MIT. Third-party models, textures and the sky keep their own licences (CC BY 4.0 and CC0), listed in
 [CREDITS.md](CREDITS.md).
