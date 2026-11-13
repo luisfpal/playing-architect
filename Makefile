@@ -48,8 +48,8 @@ site: $(GLB)
 	find build/site -name '*.gz' -exec touch {} +   # serve.py sends FILE.gz only when it is not older than FILE
 
 # Copy the site to a server and (re)start its systemd user unit. HOST=user@server DIR=playing_architect_site PORT=8780
-deploy: site
-	HOST=$(HOST) DIR=$(DIR) PORT=$(PORT) deploy/deploy.sh
+deploy: site  ## DEPLOY_PORT defaults to 8780 (PORT is the local preview port)
+	HOST=$(HOST) DIR=$(DIR) PORT=$(or $(DEPLOY_PORT),8780) deploy/deploy.sh
 
 clean:
 	rm -rf build/site build/r5_shots build/r9 build/r10 build/*.html
