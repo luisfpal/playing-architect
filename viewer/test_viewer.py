@@ -14,7 +14,7 @@ the street is at z > 0, the house at z in [-20, 0].
  n  mobile 390x844 and 844x390: touch joystick (bottom-left corner only), drag to look, interact button, plan, nothing off screen
 Real input (keys, mouse, CDP touch) is used for d, f (once), h, l, m, n. The exhaustive walks (e, f, k) step the same controller
 (`player.step`) with a route planned over the same Rapier world, because swiftshader renders only a few frames per second.
-Waits that gate a physics assertion wait for `casa.clock` (physics seconds), never for the wall clock: on this machine one
+Waits that gate a physics assertion wait for `house.clock` (physics seconds), never for the wall clock: on this machine one
 rendered frame is about 3 s, and a millisecond wait measures the renderer, not the game.
 
 VT_ONLY=n runs only the touch section (VT_ONLY=desktop only the rest); it exists to iterate on one section without the full suite.
@@ -31,11 +31,17 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+
+def is_wall(name):
+    """A room wall or an arena boundary (glTF names carry underscores for spaces); party walls and wall-mounted fittings are not."""
+    n = str(name).replace("_", " ").lower()
+    return n.startswith("boundary") or (" wall" in n and "party wall" not in n)
+
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "build" / "r5_shots"
 LOOK = 0.0022  # yaw per mouse pixel, same constant as main.js
 FAILS = []
-HUBS = {0: "Hall", 1: "Rellano planta alta", 2: "Cuarto de lavado"}
+HUBS = {0: "Hall", 1: "Upper landing", 2: "Laundry room"}
 FLOOR_Y = [0.0, 3.2, 6.4]
 ONLY = {s.strip() for s in os.environ.get("VT_ONLY", "").split(",") if s.strip()}  # empty = every section
 
@@ -56,9 +62,9 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
     def translate_path(self, path):
-        # CASA_GLB=build/web/casa.glb runs the same tests on the web copy the site serves (R11)
-        if os.environ.get("CASA_GLB") and path.split("?")[0] == "/build/casa.glb":
-            return str(ROOT / os.environ["CASA_GLB"])
+        # HOUSE_GLB=build/web/house.glb runs the same tests on the web copy the site serves (R11)
+        if os.environ.get("HOUSE_GLB") and path.split("?")[0] == "/build/house.glb":
+            return str(ROOT / os.environ["HOUSE_GLB"])
         return super().translate_path(path)
 
 
@@ -93,7 +99,7 @@ class Driver:
 
     @property
     def p(self):
-        return self.ev("casa.player")
+        return self.ev("house.player")
 
     def turn(self, dyaw):
         """Rotate by dyaw radians (positive = counter-clockwise seen from above) in steps the viewer accepts."""
@@ -190,37 +196,37 @@ def nearest_wall(d):
     cands = []
     for k in range(16):
         off = k * math.pi / 8
-        h = ev(f"casa.ray({off}, 0.9)")
-        if h and abs(h["normal"]["y"]) < 0.3 and str(h["name"]).startswith(("Muro", "Limite")):
+        h = ev(f"house.ray({off}, 0.9)")
+        if h and abs(h["normal"]["y"]) < 0.3 and is_wall(h["name"]):
             cands.append((h["dist"], off, h))
     for _, off, h in sorted(cands, key=lambda c: c[0]):
         f = d.p["feet"]
         n = h["normal"]
         s = 1.0 if (f[0] - h["point"]["x"]) * n["x"] + (f[2] - h["point"]["z"]) * n["z"] >= 0 else -1.0
         yaw = math.atan2(s * n["x"], s * n["z"])  # direction (-s*n) as a yaw: forward = (-sin, -cos)
-        sq = ev(f"casa.ray({yaw - base}, 0.9)")
-        if sq and str(sq["name"]).startswith(("Muro", "Limite")) and abs(sq["normal"]["x"] * n["x"] + sq["normal"]["z"] * n["z"]) > 0.99:
+        sq = ev(f"house.ray({yaw - base}, 0.9)")
+        if sq and is_wall(sq["name"]) and abs(sq["normal"]["x"] * n["x"] + sq["normal"]["z"] * n["z"]) > 0.99:
             # the body is 0.5 m wide: rays 0.2 rad to each side must land on the same plane, or the square-on ray went through an open door leaf
-            if all((e := ev(f"casa.ray({yaw - base + da}, 0.9)")) and abs((e["point"]["x"] - sq["point"]["x"]) * n["x"] + (e["point"]["z"] - sq["point"]["z"]) * n["z"]) < 0.15
+            if all((e := ev(f"house.ray({yaw - base + da}, 0.9)")) and abs((e["point"]["x"] - sq["point"]["x"]) * n["x"] + (e["point"]["z"] - sq["point"]["z"]) * n["z"]) < 0.15
                    for da in (-0.2, 0.2)):
                 return yaw, sq
     return None
 
 
 def floor_under(d):
-    return d.ev("casa.floorY()")
+    return d.ev("house.floorY()")
 
 
 def settle(d):
-    d.ev("casa.simHold(0, 0, 0.6)")
+    d.ev("house.simHold(0, 0, 0.6)")
 
 
 def wait_clock(page, seconds, timeout=180000):
     """Wait until the viewer has simulated `seconds` more physics seconds. Physics time, not wall time: the frame loop
     advances the clock by whole fixed steps, so this resolves on the frames the game actually ran, whatever the renderer's
     speed. Polling runs on animation frames, so a page that is busy drawing still answers as soon as its next frame ends."""
-    start = page.evaluate("casa.clock")
-    page.wait_for_function("t => casa.clock >= t", arg=start + seconds, timeout=timeout)
+    start = page.evaluate("house.clock")
+    page.wait_for_function("t => house.clock >= t", arg=start + seconds, timeout=timeout)
 
 
 # ---- touch (Chrome DevTools Protocol: real touch events, several fingers at once) ----
@@ -263,11 +269,11 @@ def inside_viewport(page, selector, pad=0):
 
 
 def room_rows(ev):
-    return ev("casa.rooms")
+    return ev("house.rooms")
 
 
-FLIGHTS = [("planta baja -> planta alta", "Hall", "Rellano planta alta", 3.2),
-           ("planta alta -> terraza", "Rellano planta alta", "Cuarto de lavado", 6.4)]
+FLIGHTS = [("ground floor -> upper floor", "Hall", "Upper landing", 3.2),
+           ("upper floor -> terrace", "Upper landing", "Laundry room", 6.4)]
 SLOPPY_SEEDS = (1, 2, 3)  # human aim error: re-aimed every 0.4 s with up to 0.45 rad of error (viewer/nav.js walkSloppy)
 
 
@@ -279,12 +285,12 @@ def run_flights(tag, d, spawn):
     for label, low, high, hy in FLIGHTS:
         for direction, (a, b) in (("up", (low, high)), ("down", (high, low))):
             sx, sy, sz = spawn[b]
-            for mode, call in (("planned", "casa.walkRoute(@W@, { tol: 0.25, maxSeconds: 60 })"),
-                               ("run", "casa.walkRoute(@W@, { tol: 0.25, maxSeconds: 60, run: true })"),
-                               *((f"sloppy{n}", f"casa.walkSloppy(@W@, {{ err: 0.45, seed: {n}, maxSeconds: 60 }})") for n in SLOPPY_SEEDS)):
-                ev(f"casa.send('teleport', {a!r})")
+            for mode, call in (("planned", "house.walkRoute(@W@, { tol: 0.25, maxSeconds: 60 })"),
+                               ("run", "house.walkRoute(@W@, { tol: 0.25, maxSeconds: 60, run: true })"),
+                               *((f"sloppy{n}", f"house.walkSloppy(@W@, {{ err: 0.45, seed: {n}, maxSeconds: 60 }})") for n in SLOPPY_SEEDS)):
+                ev(f"house.send('teleport', {a!r})")
                 settle(d)
-                route = ev(f"casa.plan([[{sx}, {sz}, {sy}]])")
+                route = ev(f"house.plan([[{sx}, {sz}, {sy}]])")
                 if not route or "waypoints" not in route:
                     check(f"f[{tag}]: {label} {direction} {mode}: route exists", False, f"{a} -> {b}: {route}")
                     continue
@@ -305,7 +311,7 @@ def run_flights(tag, d, spawn):
                 # R9: no ramp colliders any more, so the first end-floor waypoint can sit on the bottom tread; walk one
                 # waypoint further (a person steps off the stair) so the check measures the floor, not the last tread
                 wps = wps[i:min(j + 2, len(wps))]
-                ev(f"casa.place({wps[0][0]}, {wps[0][2]}, {wps[0][1]})")
+                ev(f"house.place({wps[0][0]}, {wps[0][2]}, {wps[0][1]})")
                 w = ev(call.replace("@W@", str(wps)))
                 end = d.p
                 ok = w["ok"] and w["grounded"] and abs(end["feet"][1] - sy) < 0.1 and w["minFloorGap"] > -0.05
@@ -327,29 +333,29 @@ def run_rooms(tag, d, rooms, spawn):
     trapped = []
     for r in rooms:
         name = r["name"]
-        if name in ("Calle",) or name in HUBS.values():
+        if name in ("Street",) or name in HUBS.values():
             continue
         sx, sy, sz = r["spawn"]
         lvl = level_of(sy)
         hub = spawn[HUBS[lvl]]
-        ev(f"casa.send('teleport', {name!r})")  # lands on the spawn, or on the nearest spot of the room that opens out
+        ev(f"house.send('teleport', {name!r})")  # lands on the spawn, or on the nearest spot of the room that opens out
         settle(d)
         there = d.p["feet"]
-        out_route = ev(f"casa.plan([[{hub[0]}, {hub[2]}, {hub[1]}]])")  # leave: room -> hub
+        out_route = ev(f"house.plan([[{hub[0]}, {hub[2]}, {hub[1]}]])")  # leave: room -> hub
         left = bool(out_route and "waypoints" in out_route)
         if left:
-            w = ev(f"casa.walkRoute({out_route['waypoints']}, {{ tol: 0.3, maxSeconds: 90 }})")
+            w = ev(f"house.walkRoute({out_route['waypoints']}, {{ tol: 0.3, maxSeconds: 90 }})")
             left = w["ok"] and w["minFloorGap"] > -0.05
-        ev(f"casa.send('teleport', {HUBS[lvl]!r})")  # enter: hub -> room
+        ev(f"house.send('teleport', {HUBS[lvl]!r})")  # enter: hub -> room
         settle(d)
-        in_route = ev(f"casa.plan([[{there[0]}, {there[2]}, {there[1]}]])")
+        in_route = ev(f"house.plan([[{there[0]}, {there[2]}, {there[1]}]])")
         entered = bool(in_route and "waypoints" in in_route)
         if entered:
             # the planner stops within 0.3 m of the goal, which can still be the doorway: finish the last metre straight in
-            w = ev(f"casa.walkRoute({in_route['waypoints'] + [[there[0], there[2], there[1]]]}, {{ tol: 0.15, maxSeconds: 90 }})")
+            w = ev(f"house.walkRoute({in_route['waypoints'] + [[there[0], there[2], there[1]]]}, {{ tol: 0.15, maxSeconds: 90 }})")
             entered = w["ok"] and d.p["room"] == name
         if not (left and entered):
-            why = ev(f"casa.diagnose({sx}, {sy}, {sz})") if not entered else None
+            why = ev(f"house.diagnose({sx}, {sy}, {sz})") if not entered else None
             trapped.append(f"{name}: leave={left} enter={entered} {why}")
     check(f"k[{tag}]: every room can be entered and left through its doors", not trapped, "\n      " + "\n      ".join(trapped))
 
@@ -360,13 +366,13 @@ def touch_climb(tag, mp, t, w, h, spawn, a, b):
     the end floor, the same segment run_flights times, so the walk from the room spawn to the stair cannot bias the ratio. Every
     wait is physics time: on a rendered page one frame is several seconds and a wall-clock cadence would time the renderer."""
     mev = mp.evaluate
-    mev(f"casa.send('teleport', {a!r})")
+    mev(f"house.send('teleport', {a!r})")
     settle(Driver(mp))
     sx, sy, sz = spawn[b]
-    route = mev(f"casa.plan([[{sx}, {sz}, {sy}]])")
+    route = mev(f"house.plan([[{sx}, {sz}, {sy}]])")
     if not route or "waypoints" not in route:
         return False, f"no route {a} -> {b}", None
-    f0 = mev("casa.player.feet")
+    f0 = mev("house.player.feet")
     wps = [[f0[0], f0[2], f0[1]]] + route["waypoints"]  # start at the feet: see run_flights (a spawn in line with the stair)
     i = 0
     while i < len(wps) - 1 and abs(wps[i + 1][2] - wps[0][2]) < 0.5:
@@ -381,13 +387,13 @@ def touch_climb(tag, mp, t, w, h, spawn, a, b):
     held, ok = False, True
     for k, (x, z, _y) in enumerate(wps):
         for _ in range(250):
-            p = mev("casa.player")
+            p = mev("house.player")
             fx, _, fz = p["feet"]
             if math.hypot(x - fx, z - fz) < 0.3:
                 if k == i:
-                    t0 = mev("casa.clock")
+                    t0 = mev("house.clock")
                 if k == j:
-                    t1 = mev("casa.clock")
+                    t1 = mev("house.clock")
                 break
             err = wrap(math.atan2(-(x - fx), -(z - fz)) - p["yaw"])
             if abs(err) > 0.4 and held:  # sharp turn: let go of the stick, turn on the spot
@@ -407,7 +413,7 @@ def touch_climb(tag, mp, t, w, h, spawn, a, b):
             break
     if held:
         t.up(1)
-    end = mev("casa.player")["feet"]
+    end = mev("house.player")["feet"]
     stair = None if t0 is None or t1 is None else t1 - t0
     return ok and abs(end[1] - sy) < 0.1, f"{a} -> {b}: y {end[1]:.2f} want {sy:.2f}", stair
 
@@ -422,32 +428,32 @@ def main():
         errors = []
         if on("desktop"):
             page = new_page(browser, port, errors)
-            page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=120000)
+            page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=120000)
             d = Driver(page)
             ev = d.ev
 
             # (a) the chart equals the table
-            code = {(s, e, t) for s, evs in ev("casa.machine").items() for e, t in evs.items()}
+            code = {(s, e, t) for s, evs in ev("house.machine").items() for e, t in evs.items()}
             doc = doc_edges()
             check("a: chart 1 == MACHINE", code == doc, f"only code {code - doc}, only doc {doc - code}")
-            check("a: ignored events", ev("casa.send('loaded')") is False and ev("casa.send('resume')") is False and ev("casa.state") == "orbit")
+            check("a: ignored events", ev("house.send('loaded')") is False and ev("house.send('resume')") is False and ev("house.state") == "orbit")
 
             # (b) loaded
-            check("b: loading -> orbit", ev("casa.state") == "orbit" and ev("casa.trace")[:2] == ["loading", "loaded:orbit"], ev("casa.trace"))
-            info = ev("casa.info")
+            check("b: loading -> orbit", ev("house.state") == "orbit" and ev("house.trace")[:2] == ["loading", "loaded:orbit"], ev("house.trace"))
+            info = ev("house.info")
             check("b: scene budget", 0 < info["triangles"] < 2_400_000, str(info))  # R9: full-detail vehicles (src/render/config.py MAX_TRIANGLES)
             rooms = room_rows(ev)
             check("b: room menu has every spawn", len(rooms) >= 30 and ev("document.querySelectorAll('#menu .room').length") == len(rooms), f"{len(rooms)} rooms")
             shot(page, SHOTS / "orbit.png")
 
             # (c) orbit clamp: 60 wheel-in ticks, then drag from above and from the ground
-            b = ev("casa.bounds")
+            b = ev("house.bounds")
             page.mouse.move(320, 150)
             for _ in range(60):
                 page.mouse.wheel(0, -400)
                 page.wait_for_timeout(15)
             page.wait_for_timeout(600)
-            dist = ev("casa.camera.distance")
+            dist = ev("house.camera.distance")
             check("c: wheel-in never enters the house", dist >= b["radius"] + 2 - 0.05, f"distance {dist:.2f} >= {b['radius'] + 2:.2f}")
             for dy in (-140, 140):
                 page.mouse.move(320, 150)
@@ -456,16 +462,16 @@ def main():
                     page.mouse.move(320, 150 + dy * i / 10)
                 page.mouse.up()
                 page.wait_for_timeout(500)
-                c = ev("casa.camera")
+                c = ev("house.camera")
                 polar = math.degrees(math.acos(max(-1, min(1, (c["position"][1] - b["center"][1]) / c["distance"]))))
                 check(f"c: drag polar ({'up' if dy < 0 else 'down'})", polar <= 85.5 and c["position"][1] > b["center"][1] - 0.01, f"polar {polar:.1f}")
             shot(page, SHOTS / "orbit_clamped.png")
 
             # (d) walk in from the street with real input
-            check("d: Tab starts walking", ev("casa.send('enterWalk')") and ev("casa.state") == "walk")
+            check("d: Tab starts walking", ev("house.send('enterWalk')") and ev("house.state") == "walk")
             page.wait_for_timeout(500)
             p = d.p
-            check("d: enters on the street", p["room"] == "Calle" and abs(p["feet"][0] - 6) < 0.5 and p["feet"][2] > 3, str(p))
+            check("d: enters on the street", p["room"] == "Street" and abs(p["feet"][0] - 6) < 0.5 and p["feet"][2] > 3, str(p))
             visited = []
             ok = True
             for name, x, z in [("porch", 7.5, 0.8), ("genkan", 7.7, -2.5)]:
@@ -473,58 +479,58 @@ def main():
                 visited.append((name, arrived, d.p["room"]))
                 ok &= arrived
             check("d: street -> porch -> genkan on foot", ok, str(visited))
-            check("d: genkan reached through the door", d.p["room"] in ("Genkan", "Vestibulo"), d.p["room"])
+            check("d: genkan reached through the door", d.p["room"] in ("Genkan", "Vestibule"), d.p["room"])
             shot(page, SHOTS / "walk_genkan.png")
             d.face(d.p["yaw"])
 
             # (i) wheel changes FOV only
             before = d.p["feet"]
-            fov0 = ev("casa.camera.fov")
+            fov0 = ev("house.camera.fov")
             page.mouse.wheel(0, 600)
             page.wait_for_timeout(300)
             page.mouse.wheel(0, -2400)
             page.wait_for_timeout(300)
-            fov1 = ev("casa.camera.fov")
+            fov1 = ev("house.camera.fov")
             after = d.p["feet"]
             check("i: wheel in walk changes FOV within 35..75, never position", 35 <= fov1 <= 75 and fov1 != fov0 and math.dist(before, after) < 0.02, f"fov {fov0}->{fov1}")
-            cam0 = ev("casa.camera.position")
+            cam0 = ev("house.camera.position")
             for dy in (-3000, 3000, -3000):
                 page.mouse.wheel(0, dy)
                 page.wait_for_timeout(200)
-            check("i: zoom never moves the camera (eye stays at the player)", math.dist(cam0, ev("casa.camera.position")) < 0.01, f"{cam0} -> {ev('casa.camera.position')}")
+            check("i: zoom never moves the camera (eye stays at the player)", math.dist(cam0, ev("house.camera.position")) < 0.01, f"{cam0} -> {ev('house.camera.position')}")
             page.mouse.wheel(0, 3000)
             page.wait_for_timeout(300)
-            check("i: FOV upper clamp", ev("casa.camera.fov") <= 75.001)
+            check("i: FOV upper clamp", ev("house.camera.fov") <= 75.001)
             page.mouse.wheel(0, -1000)
 
             # (l) stuck keys: every way of losing the keyboard releases it
-            ev("casa.send('teleport', 'Sala')")
+            ev("house.send('teleport', 'Living room')")
             settle(d)
             d.face(d.p["yaw"])
             stuck = []
             for how, js in (("blur", "window.dispatchEvent(new Event('blur'))"),
                             ("visibilitychange", "document.dispatchEvent(new Event('visibilitychange'))"),
-                            ("pause", "casa.send('pause')")):
-                ev("casa.state === 'paused' && casa.send('resume')")
+                            ("pause", "house.send('pause')")):
+                ev("house.state === 'paused' && house.send('resume')")
                 page.wait_for_timeout(200)
                 page.keyboard.down("KeyW")
                 page.keyboard.down("ShiftLeft")
                 page.wait_for_timeout(500)
-                if "KeyW" not in ev("casa.held"):
+                if "KeyW" not in ev("house.held"):
                     stuck.append(f"{how}: W never registered")
                 ev(js)
                 page.wait_for_timeout(250)
-                held = ev("casa.held")
+                held = ev("house.held")
                 a = d.p["feet"]
-                if ev("casa.state") == "paused":
-                    ev("casa.send('resume')")
+                if ev("house.state") == "paused":
+                    ev("house.send('resume')")
                 page.wait_for_timeout(700)
                 moved = math.dist(a, d.p["feet"])
                 if held or moved > 0.05:
                     stuck.append(f"{how}: held {held}, still moved {moved:.2f} m")
                 page.keyboard.up("KeyW")
                 page.keyboard.up("ShiftLeft")
-                ev("casa.setYaw(casa.player.yaw + 1.9)")
+                ev("house.setYaw(house.player.yaw + 1.9)")
             check("l: blur, visibilitychange, pause leave no key held", not stuck, "; ".join(stuck))
             before = d.p["feet"]
             d.hold(["KeyW"], 600)
@@ -533,57 +539,57 @@ def main():
             check("l: movement starts on keydown and stops on keyup (no coasting)", math.dist(before, mid) > 0.15 and math.dist(mid, d.p["feet"]) < 0.3, f"moved {math.dist(before, mid):.2f}, coasted {math.dist(mid, d.p['feet']):.2f}")
 
             # (m) navigation UI on desktop
-            ev("casa.send('teleport', 'Dormitorio 1')")
+            ev("house.send('teleport', 'Bedroom 1')")
             settle(d)
             page.wait_for_timeout(500)
             hud = ev("({room: document.getElementById('roomName').textContent, level: document.getElementById('levelName').textContent, chip: document.getElementById('floorChip').textContent})")
-            check("m: HUD shows room, floor and floor chip", hud["room"] == "Dormitorio 1" and hud["level"] == "Planta alta" and hud["chip"] == "P1", str(hud))
+            check("m: HUD shows room, floor and floor chip", hud["room"] == "Bedroom 1" and hud["level"] == "Upper floor" and hud["chip"] == "1F", str(hud))
             ok_map, det = inside_viewport(page, "#minimap")
             check("m: minimap visible while walking", ok_map, det)
             ink = ev("(() => { const c = document.getElementById('minimap'); const a = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < a.length; i += 4) if (a[i] > 40) n++; return n; })()")
             check("m: minimap is drawn", ink > 3000, f"{ink} px")
             chips = []
-            for room, want in (("Cuarto de lavado", ("Terraza", "T")), ("Cocina", ("Planta baja", "PB"))):
-                ev(f"casa.send('teleport', {room!r})")
+            for room, want in (("Laundry room", ("Terrace", "T")), ("Kitchen", ("Ground floor", "GF"))):
+                ev(f"house.send('teleport', {room!r})")
                 settle(d)
                 page.wait_for_timeout(400)
                 h2 = ev("({level: document.getElementById('levelName').textContent, chip: document.getElementById('floorChip').textContent})")
                 if (h2["level"], h2["chip"]) != want:
                     chips.append(f"{room}: {h2}")
-            check("m: floor indicator follows the floor (terraza, planta baja)", not chips, "; ".join(chips))
+            check("m: floor indicator follows the floor (terrace, ground floor)", not chips, "; ".join(chips))
             page.click("#planbtn")
             page.wait_for_timeout(300)
             ok_plan, det = inside_viewport(page, "#plan")
-            check("m: plan button opens the plan menu", ev("casa.state") == "paused" and ok_plan, det)
+            check("m: plan button opens the plan menu", ev("house.state") == "paused" and ok_plan, det)
             ink = ev("(() => { const c = document.getElementById('plan'); const a = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < a.length; i += 4) if (a[i] > 40) n++; return n; })()")
             check("m: plan is drawn with room names", ink > 20000, f"{ink} px")
             tabs = ev("[...document.querySelectorAll('#floors button')].map(b => b.textContent)")
-            check("m: plan has a tab per floor", tabs == ["Planta baja", "Planta alta", "Terraza"], str(tabs))
+            check("m: plan has a tab per floor", tabs == ["Ground floor", "Upper floor", "Terrace"], str(tabs))
             page.click("#floors button:nth-child(2)")
-            # a click on a room of the plan teleports: click the centre of Dormitorio 2 on the first floor
-            sp = next(s for s in ev("casa.spaces") if s["name"] == "Dormitorio 2")
+            # a click on a room of the plan teleports: click the centre of Bedroom 2 on the upper floor
+            sp = next(s for s in ev("house.spaces") if s["name"] == "Bedroom 2")
             pos = ev(f"(() => {{ const c = document.getElementById('plan'); const m = c._map; const r = c.getBoundingClientRect();"
                      f" const x = ({(sp['min'][0] + sp['max'][0]) / 2} - m.X0) * m.s + m.pad, z = ({(sp['min'][2] + sp['max'][2]) / 2} - m.Z0) * m.s + m.pad;"
                      f" return [r.left + x * r.width / c.width, r.top + z * r.height / c.height]; }})()")
             page.mouse.click(pos[0], pos[1])
             page.wait_for_timeout(500)
-            check("m: clicking a room on the plan goes there", ev("casa.state") == "walk" and d.p["room"] == "Dormitorio 2", d.p["room"])
+            check("m: clicking a room on the plan goes there", ev("house.state") == "walk" and d.p["room"] == "Bedroom 2", d.p["room"])
             shot(page, SHOTS / "hud_desktop.png")
             help_ok = ev("(() => { const h = document.getElementById('help'); const rows = [...h.querySelectorAll('.row')].filter(r => getComputedStyle(r).display !== 'none').length; return rows >= 5 && rows <= 7; })()")
             check("m: short help shows the desktop controls only", help_ok)
 
             # (e) per room: nearest wall, hold W, stay off the plane and in the room; (g) never below floor; (j) shots
             bad_wall, bad_room, bad_floor, bad_land, bad_eye = [], [], [], [], []
-            spaces = ev("casa.spaces")
+            spaces = ev("house.spaces")
             for r in rooms:
                 name = r["name"]
-                ev(f"casa.send('teleport', {name!r})")
+                ev(f"house.send('teleport', {name!r})")
                 settle(d)
                 p = d.p
                 floor0 = floor_under(d)
                 box = next((s for s in spaces if s["name"] == name), None)
                 inside = box and all(box["min"][i] - 0.01 <= p["feet"][i] <= box["max"][i] + 0.01 for i in (0, 2))
-                if p["room"] != name and not inside and name != "Calle":
+                if p["room"] != name and not inside and name != "Street":
                     bad_land.append(f"{name}: landed in {p['room']}")
                 if abs(p["feet"][1] - floor0) > 0.12:
                     bad_land.append(f"{name}: feet {p['feet'][1]:.2f} floor {floor0:.2f}")
@@ -592,14 +598,14 @@ def main():
                 if wall is None:
                     continue
                 yaw, h = wall
-                ev(f"casa.setYaw({yaw})")
-                h = ev("casa.ray(0, 0.9)") or h
+                ev(f"house.setYaw({yaw})")
+                h = ev("house.ray(0, 0.9)") or h
                 nrm, pt = h["normal"], h["point"]
                 sx, _, sz = d.p["feet"]
                 side = 1.0 if (sx - pt["x"]) * nrm["x"] + (sz - pt["z"]) * nrm["z"] >= 0 else -1.0
                 worst, worst_floor = 9.0, 0.0
                 for _ in range(10):
-                    q = ev("casa.simHold(1, 0, 0.3)")
+                    q = ev("house.simHold(1, 0, 0.3)")
                     worst = min(worst, side * ((q["feet"][0] - pt["x"]) * nrm["x"] + (q["feet"][2] - pt["z"]) * nrm["z"]))
                     worst_floor = min(worst_floor, q["minFloorGap"])
                 page.wait_for_timeout(150)
@@ -608,12 +614,12 @@ def main():
                 for dy in (-3000, 3000):
                     page.mouse.wheel(0, dy)
                     page.wait_for_timeout(120)
-                    eye = ev("casa.camera.position")
+                    eye = ev("house.camera.position")
                     cur = d.p["room"]
                     cbox = next((s_ for s_ in spaces if s_["name"] == cur), None)
                     if cbox and not all(cbox["min"][i] - 0.005 <= eye[i] <= cbox["max"][i] + 0.005 for i in (0, 2)):
                         bad_eye.append(f"{name}: eye {[round(v, 2) for v in eye]} outside {cur}")
-                    gap = min((ev(f"casa.ray({k * math.pi / 8}, 1.6)") or {"dist": 9})["dist"] for k in range(16))
+                    gap = min((ev(f"house.ray({k * math.pi / 8}, 1.6)") or {"dist": 9})["dist"] for k in range(16))
                     if gap < 0.20:
                         bad_eye.append(f"{name}: eye {gap:.2f} m from a wall")
                 if worst < 0.25:
@@ -626,25 +632,25 @@ def main():
             check("g: feet never below the floor under them (walls)", not bad_floor, "; ".join(bad_floor[:6]))
 
             # (j) the named deliverable shots: garage with both trucks
-            trucks = ev("casa.byRole('camioneta')")
-            garage = next(s for s in spaces if s["name"].startswith("Cochera"))
+            trucks = ev("house.byRole('car')")
+            garage = next(s for s in spaces if s["name"].startswith("Garage"))
             check("j: two cars parked inside the garage", len(trucks) == 2 and all(
                 garage["min"][0] - 0.01 <= t["min"][0] and t["max"][0] <= garage["max"][0] + 0.01 and garage["min"][2] - 0.01 <= t["min"][2] and t["max"][2] <= garage["max"][2] + 0.01
                 for t in trucks), str([(t["name"], t["min"], t["max"]) for t in trucks]))
-            ev("casa.send('teleport', 'Cochera (2 camionetas)')")
+            ev("house.send('teleport', 'Garage (2 cars)')")
             settle(d)
             # the spawn is the 1 m gap between the trucks; the shot is taken from the open roll-up door, 1 m out on the street, centred
-            ev(f"casa.place({(garage['min'][0] + garage['max'][0]) / 2}, {garage['min'][1]}, {garage['max'][2] + 1.0})")
+            ev(f"house.place({(garage['min'][0] + garage['max'][0]) / 2}, {garage['min'][1]}, {garage['max'][2] + 1.0})")
             settle(d)
             if trucks:
                 mid = [sum(t["center"][i] for t in trucks) / len(trucks) for i in (0, 2)]
                 f = d.p["feet"]
-                ev(f"casa.setYaw({math.atan2(-(mid[0] - f[0]), -(mid[1] - f[2]))})")
+                ev(f"house.setYaw({math.atan2(-(mid[0] - f[0]), -(mid[1] - f[2]))})")
                 page.mouse.wheel(0, 3000)  # widest FOV
                 page.wait_for_timeout(300)
-                check("j: both trucks in view from the garage", all(ev(f"casa.inView({t['name']!r})") for t in trucks))
+                check("j: both trucks in view from the garage", all(ev(f"house.inView({t['name']!r})") for t in trucks))
                 shot(page, SHOTS / "garage_trucks.png")
-            for room, out in (("Cocina", "kitchen"), ("Genkan", "genkan"), ("Piedra de lavar (cubierta)", "piedra_de_lavar")):
+            for room, out in (("Kitchen", "kitchen"), ("Genkan", "genkan"), ("Utility sink (covered)", "utility_sink")):
                 src = SHOTS / f"room_{re.sub(r'[^a-z0-9]+', '_', room.lower())}.png"
                 check(f"j: shot of {room}", src.exists() and src.stat().st_size > 50_000, str(src))
                 if src.exists():
@@ -654,26 +660,26 @@ def main():
             spawn = {r["name"]: r["spawn"] for r in rooms}
             run_flights("desktop", d, spawn)
             # R5-15: the double height reads from the dining room just past the entry walkway (looking up) and from the gallery above (looking down)
-            for name, room, x, y, pitch, fname in (("entry walkway", "Comedor (doble altura)", 8.6, 0.0, 0.50, "dh_entry.png"),
-                                                   ("gallery", "Galeria", 7.6, 3.2, -0.12, "dh_gallery.png")):
-                ev(f"casa.send('teleport', {room!r})")
+            for name, room, x, y, pitch, fname in (("entry walkway", "Dining room (double height)", 8.6, 0.0, 0.50, "dh_entry.png"),
+                                                   ("gallery", "Gallery", 7.6, 3.2, -0.12, "dh_gallery.png")):
+                ev(f"house.send('teleport', {room!r})")
                 settle(d)
-                ev(f"casa.place({x}, {y}, -8.4)")
-                ev(f"casa.setYaw({-math.pi / 2}); casa.setPitch({pitch})")
+                ev(f"house.place({x}, {y}, -8.4)")
+                ev(f"house.setYaw({-math.pi / 2}); house.setPitch({pitch})")
                 settle(d)
                 shot(page, SHOTS / fname)
                 f = d.p
-                check(f"f: double height visible from the {name}", (SHOTS / fname).stat().st_size > 50_000 and f["room"] in (room, "Hall", "Comedor (doble altura)", "Galeria"),
+                check(f"f: double height visible from the {name}", (SHOTS / fname).stat().st_size > 50_000 and f["room"] in (room, "Hall", "Dining room (double height)", "Gallery"),
                       f"{fname}, in {f['room']} at {[round(v, 2) for v in f['feet']]}")
-                ev("casa.setPitch(0)")
+                ev("house.setPitch(0)")
             # once with real keys and mouse: street level -> terrace -> back to the hall, steering along the planned route
-            ev("casa.send('teleport', 'Hall')")
+            ev("house.send('teleport', 'Hall')")
             settle(d)
             d.face(d.p["yaw"])
             legs_ok, trail = True, []
-            for a, b in (("Hall", "Cuarto de lavado"), ("Cuarto de lavado", "Hall")):
+            for a, b in (("Hall", "Laundry room"), ("Laundry room", "Hall")):
                 sx, sy, sz = spawn[b]
-                route = ev(f"casa.plan([[{sx}, {sz}, {sy}]])")
+                route = ev(f"house.plan([[{sx}, {sz}, {sy}]])")
                 ok_leg = bool(route and "waypoints" in route)
                 for x, z, _y in (route["waypoints"] + [[sx, sz, sy]] if ok_leg else []):  # the planner stops at the stair foot, 0.3 m short of the room spawn
                     ok_leg &= d.walk_to(x, z, tol=0.3 if (x, z) != (sx, sz) else 0.2, timeout=25)
@@ -690,7 +696,7 @@ def main():
             run_rooms("desktop", d, rooms, spawn)
 
             # (h) corner press then unstick, real keys
-            ev("casa.send('teleport', 'Baño social y de piscina')")
+            ev("house.send('teleport', 'Guest and pool bathroom')")
             settle(d)
             page.wait_for_timeout(450)
             wall = nearest_wall(d)
@@ -701,34 +707,34 @@ def main():
             d.hold(["KeyR"], 200)
             page.wait_for_timeout(500)
             q = d.p
-            near = min((ev(f"casa.ray({k * math.pi / 4}, 0.9)") or {"dist": 9})["dist"] for k in range(8))
-            check("h: after a corner press and R the player is free and in walk mode", ev("casa.state") == "walk" and near >= 0.25, f"nearest wall {near:.2f}, room {q['room']}")
-            # the social bathroom (the round 3 trap) is entered and left on foot with real keys
-            ev("casa.send('teleport', 'Hall')")
+            near = min((ev(f"house.ray({k * math.pi / 4}, 0.9)") or {"dist": 9})["dist"] for k in range(8))
+            check("h: after a corner press and R the player is free and in walk mode", ev("house.state") == "walk" and near >= 0.25, f"nearest wall {near:.2f}, room {q['room']}")
+            # the guest bathroom (the round 3 trap) is entered and left on foot with real keys
+            ev("house.send('teleport', 'Hall')")
             settle(d)
-            sb = spawn["Baño social y de piscina"]
-            route = ev(f"casa.plan([[{sb[0]}, {sb[2]}, {sb[1]}]])")
+            sb = spawn["Guest and pool bathroom"]
+            route = ev(f"house.plan([[{sb[0]}, {sb[2]}, {sb[1]}]])")
             enter_ok = bool(route and "waypoints" in route)
             for x, z, _y in (route["waypoints"] + [[sb[0], sb[2], sb[1]]] if enter_ok else []):  # the planner stops 0.3 m short, maybe in the doorway
                 enter_ok &= d.walk_to(x, z, tol=0.3 if (x, z) != (sb[0], sb[2]) else 0.2, timeout=20)
-            in_bath = d.p["room"] == "Baño social y de piscina"
+            in_bath = d.p["room"] == "Guest and pool bathroom"
             hub = spawn["Hall"]
-            route = ev(f"casa.plan([[{hub[0]}, {hub[2]}, {hub[1]}]])")
+            route = ev(f"house.plan([[{hub[0]}, {hub[2]}, {hub[1]}]])")
             exit_ok = bool(route and "waypoints" in route)
             for x, z, _y in (route["waypoints"] if exit_ok else []):
                 exit_ok &= d.walk_to(x, z, tol=0.3, timeout=20)
-            check("h: the ground-floor social bathroom is entered and left with real keys", enter_ok and in_bath and exit_ok and d.p["room"] == "Hall",
+            check("h: the ground-floor guest bathroom is entered and left with real keys", enter_ok and in_bath and exit_ok and d.p["room"] == "Hall",
                   f"enter {enter_ok} in {in_bath} exit {exit_ok} now {d.p['room']}")
 
             # pause menu: M opens it, a click on a room button teleports, Tab outside
-            ev("casa.send('pause')")
-            check("paused menu visible", ev("getComputedStyle(document.getElementById('menu')).display") != "none" and ev("casa.state") == "paused")
-            page.click("#menu .room[data-room='Sala']")
+            ev("house.send('pause')")
+            check("paused menu visible", ev("getComputedStyle(document.getElementById('menu')).display") != "none" and ev("house.state") == "paused")
+            page.click("#menu .room[data-room='Living room']")
             page.wait_for_timeout(500)
-            check("menu click teleports", ev("casa.state") == "walk" and d.p["room"] == "Sala", d.p["room"])
+            check("menu click teleports", ev("house.state") == "walk" and d.p["room"] == "Living room", d.p["room"])
             page.keyboard.press("Tab")
             page.wait_for_timeout(300)
-            check("Tab returns to the outside view", ev("casa.state") == "orbit")
+            check("Tab returns to the outside view", ev("house.state") == "orbit")
             check("b: zero console errors", not errors, "; ".join(errors[:3]))
             page.close()
 
@@ -741,16 +747,16 @@ def main():
                 mp.set_default_timeout(120000)  # software GL renders this scene at ~3 s per frame (measured 24 s per tap on the pre-R7 build too)
                 watch(mp, merr)
                 mp.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0")
-                mp.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=120000)
+                mp.wait_for_function("window.house && window.house.state !== 'loading'", timeout=120000)
                 mev = mp.evaluate
                 t = Touch(mp)
-                check(f"n[{label}]: touch mode on", mev("casa.touchMode") and mev("document.body.classList.contains('touch')"))
+                check(f"n[{label}]: touch mode on", mev("house.touchMode") and mev("document.body.classList.contains('touch')"))
                 check(f"n[{label}]: no horizontal scroll", mev("document.documentElement.scrollWidth <= innerWidth + 1"))
                 mp.tap("#modebtn")
-                mp.wait_for_function("casa.state === 'walk'", timeout=120000)  # event, not a timer: the tap's click flips the state
-                check(f"n[{label}]: tapping Caminar starts walking", mev("casa.state") == "walk")
-                mev("casa.send('teleport', 'Sala')")
-                mp.wait_for_function("casa.player && casa.player.room === 'Sala'", timeout=120000)
+                mp.wait_for_function("house.state === 'walk'", timeout=120000)  # event, not a timer: the tap's click flips the state
+                check(f"n[{label}]: tapping Walk in starts walking", mev("house.state") == "walk")
+                mev("house.send('teleport', 'Living room')")
+                mp.wait_for_function("house.player && house.player.room === 'Living room'", timeout=120000)
                 for sel in ("#hud", "#bar2", "#minimap", "#actBtn"):
                     ok_in, det = inside_viewport(mp, sel)
                     check(f"n[{label}]: {sel} fits the screen", ok_in, det)
@@ -758,33 +764,33 @@ def main():
                 check(f"n[{label}]: interact button is at least 44 px", act[2] >= 44 and act[3] >= 44, str(act))
                 lx, ly = 80, h - 80  # R9: the pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
                 # interact button reaches the interaction hook
-                mev("window.__acts = 0; const o = window.casaInteract && window.casaInteract.interact; if (o) window.casaInteract.interact = () => { window.__acts++; return o(); };")
+                mev("window.__acts = 0; const o = window.houseInteract && window.houseInteract.interact; if (o) window.houseInteract.interact = () => { window.__acts++; return o(); };")
                 t.down(3, act[0], act[1])
                 t.up(3)
                 wait_clock(mp, 0.05)
-                check(f"n[{label}]: interact button calls the interaction hook", mev("window.__acts") >= 1 if mev("!!window.casaInteract") else False)
+                check(f"n[{label}]: interact button calls the interaction hook", mev("window.__acts") >= 1 if mev("!!window.houseInteract") else False)
                 # plan: the button opens it, a tap on a room name goes there
                 mp.tap("#planbtn")
-                mp.wait_for_function("casa.state === 'paused'", timeout=120000)
+                mp.wait_for_function("house.state === 'paused'", timeout=120000)
                 ok_plan, det = inside_viewport(mp, "#plan")
-                check(f"n[{label}]: plan opens and fits", mev("casa.state") == "paused" and ok_plan and mev("document.documentElement.scrollWidth <= innerWidth + 1"), det)
+                check(f"n[{label}]: plan opens and fits", mev("house.state") == "paused" and ok_plan and mev("document.documentElement.scrollWidth <= innerWidth + 1"), det)
                 ok_box, det = inside_viewport(mp, "#menu .box")
                 check(f"n[{label}]: menu box fits the screen", ok_box or mev("document.querySelector('#menu .box').scrollHeight > document.querySelector('#menu .box').clientHeight"), det)
-                mev("document.querySelector('#menu .room[data-room=\"Cocina\"]').scrollIntoView()")
-                mp.tap("#menu .room[data-room='Cocina']")
-                mp.wait_for_function("casa.state === 'walk' && casa.player.room === 'Cocina'", timeout=120000)
-                check(f"n[{label}]: tapping a room in the plan goes there", mev("casa.state") == "walk" and mev("casa.player.room") == "Cocina", mev("casa.player.room"))
+                mev("document.querySelector('#menu .room[data-room=\"Kitchen\"]').scrollIntoView()")
+                mp.tap("#menu .room[data-room='Kitchen']")
+                mp.wait_for_function("house.state === 'walk' && house.player.room === 'Kitchen'", timeout=120000)
+                check(f"n[{label}]: tapping a room in the plan goes there", mev("house.state") == "walk" and mev("house.player.room") == "Kitchen", mev("house.player.room"))
                 # touch must never ask for pointer lock or pause by itself
-                mev("casa.send('teleport', 'Comedor')")  # send() runs placeAt synchronously; 'Comedor' is the spawn key, the room is 'Comedor (doble altura)'
+                mev("house.send('teleport', 'Dining room (double height)')")  # send() runs placeAt synchronously
                 t.drag(1, lx, ly, lx + 50, ly, hold=True)
                 wait_clock(mp, 0.1)  # physics, not wall time: the state is what the check is about and the frame may take seconds
-                check(f"n[{label}]: still walking after touches (no pointer-lock pause)", mev("casa.state") == "walk")
+                check(f"n[{label}]: still walking after touches (no pointer-lock pause)", mev("house.state") == "walk")
                 t.up(1)
                 # a finger lost mid-drag (touchcancel / blur) must not leave the stick pushed
                 t.down(1, lx, ly)
                 t.move(1, lx, ly - 50)
                 mev("window.dispatchEvent(new Event('blur'))")  # evaluate runs the handler synchronously: the axes are read after it
-                check(f"n[{label}]: blur releases the stick", mev("casa.touchAxes")["forward"] == 0)
+                check(f"n[{label}]: blur releases the stick", mev("house.touchAxes")["forward"] == 0)
                 t.up(1)
                 # R5-64 on the phone: every flight and (portrait) every room with the same controller, and the terrace flight climbed
                 # and descended with the real touch joystick and look drag
@@ -801,42 +807,42 @@ def main():
                 cp = ctx.new_page()
                 cp.bring_to_front()  # a page opened right after another closed can be throttled as hidden: its frames (and the physics clock) crawl
                 cp.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0&render=0", timeout=120000)
-                cp.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=120000)
+                cp.wait_for_function("window.house && window.house.state !== 'loading'", timeout=120000)
                 cp.tap("#modebtn", timeout=60000)
-                cp.wait_for_function("casa.state === 'walk'", timeout=120000)
+                cp.wait_for_function("house.state === 'walk'", timeout=120000)
                 ct = Touch(cp)
                 cev = cp.evaluate
                 # Touch controls on the page that keeps 60 Hz: the same real events and the same viewer code as the painted
                 # phone page above, without the ~3 s frame. On the painted page a ten-event drag spans several physics seconds;
                 # with the stick held against furniture that is long enough for the stuck guard to fire, and its placeAt resets
                 # yaw, so the look check measured the guard instead of the drag. Here the same drag is 0.05 physics seconds.
-                cev("casa.send('teleport', 'Sala')")
-                cp.wait_for_function("casa.player && casa.player.room === 'Sala'", timeout=120000)
+                cev("house.send('teleport', 'Living room')")
+                cp.wait_for_function("house.player && house.player.room === 'Living room'", timeout=120000)
                 lx, ly = 80, h - 80  # R9: the pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
-                f0 = cev("casa.player.feet")
+                f0 = cev("house.player.feet")
                 ct.drag(1, lx, ly, lx, ly - 55, hold=True)
                 wait_clock(cp, 0.3)
-                axes = cev("casa.touchAxes")
-                f1 = cev("casa.player.feet")
+                axes = cev("house.touchAxes")
+                f1 = cev("house.player.feet")
                 check(f"n[{label}]: joystick up walks forward", axes["forward"] > 0.5 and math.dist(f0, f1) > 0.3, f"axes {axes}, moved {math.dist(f0, f1):.2f} m")
                 # look with a second finger while the joystick is held
-                y0 = cev("casa.player.yaw")
+                y0 = cev("house.player.yaw")
                 ct.drag(2, w * 0.8, h * 0.4, w * 0.8 - 120, h * 0.4, hold=False)
                 wait_clock(cp, 0.1)
-                y1 = cev("casa.player.yaw")
-                f2 = cev("casa.player.feet")
+                y1 = cev("house.player.yaw")
+                f2 = cev("house.player.feet")
                 check(f"n[{label}]: dragging the right side looks around while walking", abs(wrap(y1 - y0)) > 0.3 and math.dist(f1, f2) > 0.05, f"yaw {y0:.2f} -> {y1:.2f}")
                 ct.up(1)
                 wait_clock(cp, 0.3)  # BRAKE 22 m/s2 stops a 3 m/s run in 0.14 s; 0.3 leaves room for a whole frame chunk
-                f3 = cev("casa.player.feet")
+                f3 = cev("house.player.feet")
                 wait_clock(cp, 0.2)
-                f4 = cev("casa.player.feet")
-                check(f"n[{label}]: releasing the joystick stops", cev("casa.touchAxes")["forward"] == 0 and math.dist(f3, f4) < 0.03, f"drift {math.dist(f3, f4):.3f}")
+                f4 = cev("house.player.feet")
+                check(f"n[{label}]: releasing the joystick stops", cev("house.touchAxes")["forward"] == 0 and math.dist(f3, f4) < 0.03, f"drift {math.dist(f3, f4):.3f}")
                 # League of Legends layout: the stick lives only in the bottom-left corner; a drag in the upper left looks, it never walks
-                y5 = cev("casa.player.yaw")
+                y5 = cev("house.player.yaw")
                 ct.drag(1, w * 0.2, h * 0.15, w * 0.2 + 80, h * 0.15 - 40, hold=True)
                 wait_clock(cp, 0.3)
-                ax5, f5, y6 = cev("casa.touchAxes"), cev("casa.player.feet"), cev("casa.player.yaw")
+                ax5, f5, y6 = cev("house.touchAxes"), cev("house.player.feet"), cev("house.player.yaw")
                 ct.up(1)
                 wait_clock(cp, 0.1)
                 check(f"n[{label}]: upper-left drag looks, it does not walk", ax5["forward"] == 0 and ax5["right"] == 0 and math.dist(f4, f5) < 0.03 and abs(wrap(y6 - y5)) > 0.1,
@@ -860,11 +866,11 @@ def main():
 
         if on("desktop"):
             bad = browser.new_page()
-            bad.route("**/casa.glb", lambda r: r.abort())
+            bad.route("**/house.glb", lambda r: r.abort())
             bad.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0")
-            bad.wait_for_function("window.casa && window.casa.state === 'error'", timeout=30000)
+            bad.wait_for_function("window.house && window.house.state === 'error'", timeout=30000)
             shown = bad.evaluate("getComputedStyle(document.getElementById('error')).display") != "none"
-            check("missing GLB -> error state with panel", shown and bad.evaluate("casa.send('enterWalk')") is False)
+            check("missing GLB -> error state with panel", shown and bad.evaluate("house.send('enterWalk')") is False)
         browser.close()
     srv.shutdown()
     if FAILS:

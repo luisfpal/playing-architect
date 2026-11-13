@@ -1,4 +1,4 @@
-// Recorrido 3D de la casa. Modes only change through send() (machine.js, chart 1 of docs/statecharts.md).
+// Walk-through viewer for the house. Modes only change through send() (machine.js, chart 1 of docs/statecharts.md).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -13,13 +13,13 @@ import { EffectComposer, RenderPass, EffectPass, SMAAEffect, ToneMappingEffect, 
 import { N8AOPostPass } from 'n8ao';
 
 const $ = (id) => document.getElementById(id);
-const LEVELS = ['Planta baja', 'Planta alta', 'Terraza'];
-// feet heights: the terrace floor is at 6.40 m, the laundry roof deck at 9.02 m (build/casa.ifc)
+const LEVELS = ['Ground floor', 'Upper floor', 'Terrace'];
+// feet heights: the terrace floor is at 6.40 m, the laundry roof deck at 9.02 m (build/house.ifc)
 const TERRACE_Y = 6.0, DECK_Y = 8.5;
 const LOOK = 0.0022, LOOK_TOUCH = 0.0042, FOV_MIN = 35, FOV_MAX = 75;
 const RENDER = new URLSearchParams(location.search).get('render') !== '0'; // ?render=0: input and physics only, so software GL keeps 60 Hz
 const AO = new URLSearchParams(location.search).get('ao') !== '0'; // the mechanics test runs without the post stack (software GL)
-const OPEN_AIR = /patio|sendero|terraza|calle|cochera/i;
+const OPEN_AIR = /yard|terrace|street|garage/i;
 
 // ---------- renderer, light ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -57,14 +57,14 @@ new HDRLoader().load('../assets/hdri/kloofendal_48d_partly_cloudy_puresky_2k.hdr
 const world = { rooms: [], spaces: [], bulbSpots: [], roleBoxes: [], walls: [], doors: [], spawns: new Map(), center: new THREE.Vector3(), radius: 12, phys: null, nav: null };
 const view = { pitch: 0, fov: 60, locked: false };
 const keys = new Set();
-let orbit = null, hasLocked = false, lastRoom = 'Calle', minimap = null, planLevel = 0, planHover = null;
+let orbit = null, hasLocked = false, lastRoom = 'Street', minimap = null, planLevel = 0, planHover = null;
 // Touch mode: a coarse primary pointer, or the first finger that touches the screen (hybrid laptops start in mouse mode).
 let touchMode = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window && !matchMedia('(pointer: fine)').matches);
 const setTouchMode = (on) => { touchMode = on; document.body.classList.toggle('touch', on); touch.setEnabled(machine.state === 'walk', on); };
 const touch = initTouch({
   surface: renderer.domElement,
   onLook: (dx, dy) => { if (machine.state === 'walk' && world.phys) { world.phys.player.yaw -= dx * LOOK_TOUCH; view.pitch = THREE.MathUtils.clamp(view.pitch - dy * LOOK_TOUCH, -1.45, 1.45); } },
-  onInteract: () => window.casaInteract?.interact(),
+  onInteract: () => window.houseInteract?.interact(),
 });
 document.body.classList.toggle('touch', touchMode);
 addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch' && !touchMode) setTouchMode(true); }, { capture: true });
@@ -84,9 +84,9 @@ function roomAt(p) {
   }
   if (best) return best.name;
   // no IfcSpace covers every metre of the terrace or the laundry roof deck: name them by height, never as the street
-  if (p.y > DECK_Y) return 'Terraza: cubierta del lavado';
-  if (p.y > TERRACE_Y) return 'Terraza';
-  return 'Calle';
+  if (p.y > DECK_Y) return 'Terrace: laundry roof deck';
+  if (p.y > TERRACE_Y) return 'Terrace';
+  return 'Street';
 }
 
 function facingYaw(from, to) {
@@ -99,7 +99,7 @@ function placeAt(name, why) {
   const space = world.spaces.find((s) => s.name === name);
   const target = space ? space.box.getCenter(new THREE.Vector3()) : null;
   const toIfc = (deg) => { const a = THREE.MathUtils.degToRad(deg); return Math.atan2(-Math.cos(a), Math.sin(a)); };
-  const yaw = name === 'Calle' || !target || target.distanceTo(sp.pos) < 0.5 ? toIfc(sp.yawDeg) : facingYaw(sp.pos, target);
+  const yaw = name === 'Street' || !target || target.distanceTo(sp.pos) < 0.5 ? toIfc(sp.yawDeg) : facingYaw(sp.pos, target);
   lastRoom = name;
   world.phys.player.setFeet(sp.pos.x, sp.pos.y, sp.pos.z);
   const pl = world.phys.player;
@@ -109,12 +109,12 @@ function placeAt(name, why) {
     return true;
   }
   // a spawn that furniture has walled into a pocket would trap the player: land at the nearest point of the room that opens out
-  if (world.nav && space && name !== 'Calle') {
+  if (world.nav && space && name !== 'Street') {
     const spot = world.nav.openSpot(sp.pos.x, sp.pos.y, sp.pos.z, space);
     if (spot && Math.hypot(spot[0] - sp.pos.x, spot[1] - sp.pos.z) > 0.01) { pl.setFeet(spot[0], sp.pos.y, spot[1]); }
   }
   // land where there is room to look around: of the free points within 2 m of the spawn, the one farthest from any wall or door leaf
-  if (space && name !== 'Calle') {
+  if (space && name !== 'Street') {
     const home = pl.feet.clone(), around = (a) => pl.ray(a * Math.PI / 4, 3, 1.0)?.dist ?? 3;
     const room = (x, z) => { pl.setFeet(x, home.y, z); let m = Math.min(3, pl.leafDist(x, z) + 0.3); for (let a = 0; a < 8; a++) m = Math.min(m, around(a)); return Math.min(m, 1.5); };
     let best = [home.x, home.z], bestScore = room(home.x, home.z);
@@ -147,7 +147,7 @@ function onChange(next, prev, event, arg) {
   if (orbit) orbit.enabled = next === 'orbit';
   $('cross').style.display = walking ? 'block' : 'none';
   $('menu').style.display = next === 'paused' ? 'grid' : 'none';
-  $('modebtn').textContent = next === 'orbit' ? 'Caminar (Tab)' : touchMode ? 'Salir' : 'Ver desde afuera (Tab)';
+  $('modebtn').textContent = next === 'orbit' ? 'Walk in (Tab)' : touchMode ? 'Exit' : 'View from outside (Tab)';
   $('modebtn').style.display = next === 'loading' || next === 'error' ? 'none' : '';
   $('planbtn').style.display = next === 'walk' || next === 'paused' ? '' : 'none';
   $('minimap').style.display = next === 'walk' ? 'block' : 'none';
@@ -170,7 +170,7 @@ function onChange(next, prev, event, arg) {
     }
   }
   if (next === 'walk') {
-    if (event === 'enterWalk') placeAt('Calle');
+    if (event === 'enterWalk') placeAt('Street');
     if (event === 'teleport') placeAt(arg);
     if (event === 'unstick') {
       const p = world.phys.player, s = p.safe.length > 1 ? p.safe[p.safe.length - 2] : p.safe[p.safe.length - 1];
@@ -271,12 +271,15 @@ function buildMenu() {
 }
 
 // ---------- loop ----------
-let acc = 0, last = performance.now(), clock = 0, stuckT = 0, anchor = new THREE.Vector3(), curRoom = 'Calle';
+let acc = 0, last = performance.now(), clock = 0, stuckT = 0, anchor = new THREE.Vector3(), curRoom = 'Street';
 let frames = 0, mapT = 0, eyeY = null;
+const MAX_STEPS = 15; // at most 0.25 s of physics per frame (a step costs ~0.05 ms): a slow phone keeps real speed, a long stall is dropped
+const prevFeet = new THREE.Vector3(), drawFeet = new THREE.Vector3();
+let havePrev = false;
 function frame(now) {
   requestAnimationFrame(frame);
   frames++;
-  const dt = Math.min((now - last) / 1000, 0.25);
+  const dt = Math.min((now - last) / 1000, MAX_STEPS * STEP);
   last = now;
   const st = machine.state;
   if (st === 'orbit') orbit.update();
@@ -284,10 +287,12 @@ function frame(now) {
     const p = world.phys.player;
     const forward = THREE.MathUtils.clamp((keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + touch.axes.forward, -1, 1);
     const right = THREE.MathUtils.clamp((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + touch.axes.right, -1, 1);
-    const run = keys.has('ShiftLeft') || keys.has('ShiftRight') || touch.axes.run;
+    const run = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : touch.axes.run; // 0..1: the stick blends walk into run
+    if (!havePrev) { prevFeet.copy(p.feet); havePrev = true; }
     acc += dt;
     while (acc >= STEP) {
       acc -= STEP; clock += STEP;
+      prevFeet.copy(p.feet);
       p.step({ forward, right, run });
       p.remember(clock);
       // stuck detector: input held for 2 s with less than 1 cm of movement
@@ -302,9 +307,14 @@ function frame(now) {
     }
     // The body climbs a tread in one step, the eye eases up to it: a stair reads as a ramp, not as sixteen small jolts.
     // A jump over half a metre (teleport, unstick) snaps.
-    if (eyeY === null || Math.abs(p.feet.y - eyeY) > 0.5) eyeY = p.feet.y;
-    else eyeY += (p.feet.y - eyeY) * Math.min(1, dt * EYE_RATE);
-    camera.position.set(p.feet.x, eyeY + EYE, p.feet.z);
+    // Physics runs at a fixed 60 Hz; the camera is drawn between the last two physics states (alpha = leftover time), so a
+    // 120 Hz or 144 Hz screen moves the same distance every frame instead of moving on one frame and standing still on the next.
+    // A jump (teleport, unstick) is drawn where it lands.
+    if (prevFeet.distanceTo(p.feet) > 0.5) prevFeet.copy(p.feet);
+    drawFeet.copy(prevFeet).lerp(p.feet, acc / STEP);
+    if (eyeY === null || Math.abs(drawFeet.y - eyeY) > 0.5) eyeY = drawFeet.y;
+    else eyeY += (drawFeet.y - eyeY) * (1 - Math.exp(-dt * EYE_RATE));
+    camera.position.set(drawFeet.x, eyeY + EYE, drawFeet.z);
     camera.rotation.set(view.pitch, p.yaw, 0, 'YXZ');
     curRoom = roomAt(p.feet);
     const sp = world.rooms.find((r) => r.name === curRoom);
@@ -317,8 +327,8 @@ function frame(now) {
       minimap.draw($('minimap'), fl, { feet: [p.feet.x, p.feet.y, p.feet.z], yaw: p.yaw, room: curRoom }, { labels: false, pad: 4 });
     }
   } else if (st === 'orbit') {
-    $('roomName').textContent = 'Vista exterior';
-    $('levelName').textContent = touchMode ? 'Arrastra para girar, pellizca para acercar' : 'Arrastra para girar, rueda para acercar, Tab para entrar';
+    $('roomName').textContent = 'Outside view';
+    $('levelName').textContent = touchMode ? 'Drag to orbit, pinch to zoom' : 'Drag to orbit, scroll to zoom, Tab to walk in';
     $('floorChip').textContent = '';
   }
   updateLight();
@@ -341,7 +351,7 @@ function updateLight() {
 }
 
 // ---------- hook for the test (read-only plus the machine) ----------
-window.casa = {
+window.house = {
   get state() { return machine.state; },
   send,
   machine: MACHINE,
@@ -418,7 +428,7 @@ window.casa = {
 async function load() {
   const gltf = await new Promise((res, rej) => {
     // the site serves a meshopt-compressed copy (tools/web/optimize.mjs); ?glb= picks another file for side-by-side proofs
-    const url = new URLSearchParams(location.search).get('glb') || '../build/casa.glb';
+    const url = new URLSearchParams(location.search).get('glb') || '../build/house.glb';
     new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(url, res, (e) => {
       if (e.total) $('bar').firstElementChild.style.width = `${(100 * e.loaded / e.total).toFixed(0)}%`;
     }, rej);
@@ -455,9 +465,9 @@ async function load() {
     house.union(box);
     o.visible = false;
   }
-  root.traverse((o) => { if (o.name.startsWith('Limite')) o.visible = false; });
+  root.traverse((o) => { if (o.name.startsWith('Boundary')) o.visible = false; });
   for (const [name, s] of world.spawns) world.rooms.push({ name, level: s.level, spawn: s.pos.toArray() });
-  world.rooms.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, 'es'));
+  world.rooms.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, 'en'));
   world.center.copy(house.getCenter(new THREE.Vector3()));
   world.radius = house.getSize(new THREE.Vector3()).length() / 2;
   world.spaces = world.spaces.map((s) => Object.assign(s, { min: s.box.min.toArray(), max: s.box.max.toArray() }));
@@ -498,7 +508,7 @@ async function load() {
   camera.fov = 45; camera.updateProjectionMatrix();
   camera.position.copy(world.center).add(new THREE.Vector3(10, 11, 24));
   orbit.update();
-  window.casa.info = { triangles: Math.round(tris), colliders: world.phys.stats, ladders: world.phys.ladders, toneMapping: 'ACESFilmic', shadows: true, ao: AO, bulbs: world.bulbSpots.length };
+  window.house.info = { triangles: Math.round(tris), colliders: world.phys.stats, ladders: world.phys.ladders, toneMapping: 'ACESFilmic', shadows: true, ao: AO, bulbs: world.bulbSpots.length };
   send('loaded');
 }
 

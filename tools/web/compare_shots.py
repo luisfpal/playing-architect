@@ -1,7 +1,7 @@
 """Proof that the web copy of the scene looks the same as the full one (rule: do not nerf the model).
 
   uv run --no-project --python 3.12 --with playwright --with pillow --with numpy python tools/web/compare_shots.py \
-      [A.glb B.glb OUT_DIR]          (defaults: build/casa.glb build/web/casa.glb build/r11/compare)
+      [A.glb B.glb OUT_DIR]          (defaults: build/house.glb build/web/house.glb build/r11/compare)
 
 Loads the real viewer (headless Chromium, swiftshader) once per GLB with ?glb=, takes the same walking views (car
 close-ups: wheels, lamps, cabins; rooms), and writes per view A | B | 8x difference, plus a
@@ -20,10 +20,10 @@ sys.path.insert(0, str(ROOT / "viewer"))
 from test_viewer import serve  # noqa: E402
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
-A, B, OUT = (args + ["build/casa.glb", "build/web/casa.glb", "build/r11/compare"][len(args):])[:3]
+A, B, OUT = (args + ["build/house.glb", "build/web/house.glb", "build/r11/compare"][len(args):])[:3]
 OUT = ROOT / OUT
 MAX_MEAN, MAX_SHARE = 1.5, 0.01
-ONLY = next((a.split("=", 1)[1].split(",") for a in sys.argv[1:] if a.startswith("--only=")), None)  # e.g. --only=room_Cocina
+ONLY = next((a.split("=", 1)[1].split(",") for a in sys.argv[1:] if a.startswith("--only=")), None)  # e.g. --only=room_kitchen
 # feet (glTF x, y, z), yaw, pitch. Cars: west x 1.05-2.97, east x 3.91-5.94, tails near z -0.3, noses near z -5.1/-5.75;
 # yaw +pi/2 looks toward -x (the west car from the gap), -pi/2 toward +x (the east car).
 VIEWS = {
@@ -39,7 +39,7 @@ VIEWS = {
     "west_nose_q": (3.45, 0.0, -5.6, 2.55, -0.20),
     "street": (3.40, 0.0, 3.5, 0.0, -0.10),
 }
-ROOMS = ["Sala", "Cocina", "Comedor", "Dormitorio principal", "Terraza"]
+ROOMS = ["Living room", "Kitchen", "Dining room (double height)", "Main bedroom", "Terrace"]
 
 
 def shoot(glb, tag, port, pw):
@@ -48,16 +48,16 @@ def shoot(glb, tag, port, pw):
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.goto(f"http://127.0.0.1:{port}/viewer/index.html?glb=../{glb}")
-    page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=600000)
-    info = page.evaluate("casa.info")
-    page.evaluate("casa.send('teleport', 'Cochera (2 camionetas)')")
+    page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=600000)
+    info = page.evaluate("house.info")
+    page.evaluate("house.send('teleport', 'Garage (2 cars)')")
     page.wait_for_timeout(3000)
     shots = {}
     for name, (x, y, z, yaw, pitch) in VIEWS.items():
         if ONLY and name not in ONLY:
             continue
         # stand on the ground there (placing in the air lets the fall time differ between runs: sub-pixel jitter)
-        put = f"casa.place({x}, casa.groundAt({x}, {z}, 1.5)?.y ?? {y}, {z}); casa.setYaw({yaw}); casa.setPitch({pitch})"
+        put = f"house.place({x}, house.groundAt({x}, {z}, 1.5)?.y ?? {y}, {z}); house.setYaw({yaw}); house.setPitch({pitch})"
         page.evaluate(put)
         page.wait_for_timeout(2500)
         page.evaluate(put)
@@ -65,14 +65,14 @@ def shoot(glb, tag, port, pw):
         p = OUT / f"{name}_{tag}.png"
         page.screenshot(path=str(p))
         shots[name] = p
-    rooms = [r["name"] for r in page.evaluate("casa.rooms")]
+    rooms = [r["name"] for r in page.evaluate("house.rooms")]
     for want in ROOMS:
         if ONLY and "room_" + want.replace(" ", "_") not in ONLY:
             continue
         r = next((n for n in rooms if n.startswith(want)), None)
         if not r:
             continue
-        page.evaluate(f"casa.send('teleport', {json.dumps(r)})")
+        page.evaluate(f"house.send('teleport', {json.dumps(r)})")
         page.wait_for_timeout(4000)
         p = OUT / f"room_{want.replace(' ', '_')}_{tag}.png"
         page.screenshot(path=str(p))

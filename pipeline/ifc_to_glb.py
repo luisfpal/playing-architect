@@ -1,4 +1,4 @@
-"""Step 2 of the pipeline, on the neutral example: IFC geometry becomes a GLB whose nodes carry the viewer contract.
+"""Step 2 of the pipeline, on a toy example: IFC geometry becomes a GLB whose nodes carry the viewer contract.
 
   uv run --no-project --python 3.12 --with ifcopenshell --with trimesh python pipeline/ifc_to_glb.py build/example.ifc build/example.glb
 

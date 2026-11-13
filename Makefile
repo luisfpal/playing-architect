@@ -1,6 +1,6 @@
 # playing-architect. Needs: python3, uv (https://docs.astral.sh/uv/), node 20+ (only for optimize).
-GLB      := build/casa.glb
-GLB_URL  ?= https://github.com/luisfpal/playing-architect/releases/download/v1.0/casa.glb
+GLB      := build/house.glb
+GLB_URL  ?= https://github.com/luisfpal/playing-architect/releases/download/v1.1/house.glb
 UVPW     := uv run --no-project --python 3.12 --with playwright
 PORT     ?= 8080
 
@@ -22,6 +22,7 @@ test: viewer-test interact-test
 
 viewer-test: $(GLB)
 	$(UVPW) playwright install chromium
+	$(UVPW) python viewer/test_motion.py
 	$(UVPW) python viewer/test_viewer.py
 	$(UVPW) python viewer/test_sink.py
 	$(UVPW) python viewer/test_touch.py
@@ -40,8 +41,8 @@ optimize:
 site: $(GLB)
 	rm -rf build/site && mkdir -p build/site/build
 	cp site/index.html site/base.css build/site/
-	cp -R viewer build/site/viewer && rm -f build/site/viewer/test_*.py
-	cp $(GLB) build/site/build/casa.glb
+	cp -R viewer build/site/viewer && rm -rf build/site/viewer/test_*.py build/site/viewer/__pycache__
+	cp $(GLB) build/site/build/house.glb
 	mkdir -p build/site/assets && cp -R assets/hdri build/site/assets/hdri
 	find build/site -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.json' -o -name '*.glb' -o -name '*.wasm' -o -name '*.hdr' \) -exec gzip -kf9 {} \;
 	find build/site -name '*.gz' -exec touch {} +   # serve.py sends FILE.gz only when it is not older than FILE

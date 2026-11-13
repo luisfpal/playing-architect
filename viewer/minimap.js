@@ -1,7 +1,7 @@
 // Floor plan drawn from the GLB itself (room volumes, walls, doors), north up: the street is at the bottom of the plan.
 // Two uses: a small live minimap of the player's floor, and a large plan in the menu where a room tap teleports there.
 // glTF frame: x east, z = -IFC y, so the street (z > 0) maps to the bottom.
-export const FLOORS = [{ name: 'Planta baja', short: 'PB', y0: -1, y1: 1.6 }, { name: 'Planta alta', short: 'P1', y0: 1.6, y1: 4.8 }, { name: 'Terraza', short: 'T', y0: 4.8, y1: 12 }];
+export const FLOORS = [{ name: 'Ground floor', short: 'GF', y0: -1, y1: 1.6 }, { name: 'Upper floor', short: '1F', y0: 1.6, y1: 4.8 }, { name: 'Terrace', short: 'T', y0: 4.8, y1: 12 }];
 export const floorOf = (y) => FLOORS.findIndex((f) => y >= f.y0 && y < f.y1);
 
 export function createMinimap({ spaces, walls, doors, bounds }) {

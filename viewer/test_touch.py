@@ -23,8 +23,8 @@ from test_viewer import ROOT, Touch, serve, watch  # noqa: E402
 OUT = ROOT / "build" / "r9" / "touch.json"
 VIEWPORTS = {"portrait": (390, 844), "landscape": (844, 390)}
 MAX_DY = 0.05
-LEGS = [("Hall", "Rellano planta alta"), ("Rellano planta alta", "Hall"),
-        ("Rellano planta alta", "Cuarto de lavado"), ("Cuarto de lavado", "Rellano planta alta")]
+LEGS = [("Hall", "Upper landing"), ("Upper landing", "Hall"),
+        ("Upper landing", "Laundry room"), ("Laundry room", "Upper landing")]
 
 
 def open_page(browser, port, w, h, errors):
@@ -32,15 +32,15 @@ def open_page(browser, port, w, h, errors):
     page = ctx.new_page()
     watch(page, errors)
     page.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0")
-    page.wait_for_function("window.casa && window.casa.state !== 'loading'", timeout=240000)
-    page.evaluate("casa.send('enterWalk')")
-    page.wait_for_function('casa.state==="walk" && casa.player', timeout=60000)
+    page.wait_for_function("window.house && window.house.state !== 'loading'", timeout=240000)
+    page.evaluate("house.send('enterWalk')")
+    page.wait_for_function('house.state==="walk" && house.player', timeout=60000)
     return page
 
 
 def hold(page, touch, x0, y0, x1, y1, secs=1.2):
     """Press at (x0, y0), slide to (x1, y1), hold, release. Returns (moved metres, yaw change radians)."""
-    a = page.evaluate("casa.player")
+    a = page.evaluate("house.player")
     touch.down(1, x0, y0)
     for s in range(1, 9):
         touch.move(1, x0 + (x1 - x0) * s / 8, y0 + (y1 - y0) * s / 8)
@@ -48,23 +48,23 @@ def hold(page, touch, x0, y0, x1, y1, secs=1.2):
     time.sleep(secs)
     touch.up(1)
     time.sleep(0.2)
-    b = page.evaluate("casa.player")
+    b = page.evaluate("house.player")
     moved = ((a["feet"][0] - b["feet"][0]) ** 2 + (a["feet"][2] - b["feet"][2]) ** 2) ** 0.5
     return moved, abs(a["yaw"] - b["yaw"])
 
 
 def leg(page, spawn, a, b):
     ev = page.evaluate
-    ev(f"casa.send('teleport', {a!r})")
+    ev(f"house.send('teleport', {a!r})")
     time.sleep(0.5)
     sx, sy, sz = spawn[b]
-    route = ev(f"casa.plan([[{sx}, {sz}, {sy}]])")
+    route = ev(f"house.plan([[{sx}, {sz}, {sy}]])")
     if not route or "waypoints" not in route:
         return {"leg": f"{a} -> {b}", "ok": False, "why": "no route"}
     wps = route["waypoints"]
-    ev(f"casa.place({wps[0][0]}, {wps[0][2]}, {wps[0][1]})")
-    w = ev(f"casa.walkRoute({wps}, {{ tol: 0.25, maxSeconds: 60 }})")
-    end = ev("casa.player.feet")
+    ev(f"house.place({wps[0][0]}, {wps[0][2]}, {wps[0][1]})")
+    w = ev(f"house.walkRoute({wps}, {{ tol: 0.25, maxSeconds: 60 }})")
+    end = ev("house.player.feet")
     ok = bool(w["ok"] and w["grounded"] and abs(end[1] - sy) < 0.15 and w["maxDy"] <= MAX_DY)
     return {"leg": f"{a} -> {b}", "ok": ok, "seconds": round(w["seconds"], 2), "maxDy": round(w["maxDy"], 3),
             "end_y": round(end[1], 2), "want_y": round(sy, 2)}
@@ -77,7 +77,7 @@ def main():
         browser = pw.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
         for tag, (w, h) in VIEWPORTS.items():
             page = open_page(browser, srv.server_address[1], w, h, errors)
-            rooms = page.evaluate("casa.rooms")
+            rooms = page.evaluate("house.rooms")
             spawn = {r["name"]: r["spawn"] for r in rooms}
             rec = {"viewport": tag}
             touch = Touch(page)
@@ -85,10 +85,10 @@ def main():
             rec["stick_box"] = base
             rec["stick_corner_ok"] = base[0] >= 0 and base[3] <= h and base[2] <= w * 0.45 and base[1] >= h * 0.5
             cx, cy = (base[0] + base[2]) / 2, (base[1] + base[3]) / 2
-            page.evaluate("casa.send('teleport', 'Sala')")
+            page.evaluate("house.send('teleport', 'Living room')")
             time.sleep(0.6)
             rec["zone_walk"] = hold(page, touch, cx, cy, cx, cy - 50)
-            page.evaluate("casa.send('teleport', 'Sala')")
+            page.evaluate("house.send('teleport', 'Living room')")
             time.sleep(0.6)
             rec["above_zone_look"] = hold(page, touch, cx, cy - 170, cx + 120, cy - 170, secs=0.3)
             rec["middle_look"] = hold(page, touch, w / 2, h / 2, w / 2 + 120, h / 2, secs=0.3)
@@ -96,26 +96,26 @@ def main():
             rec["look_ok"] = all(m < 0.05 and y > 0.05 for m, y in (rec["above_zone_look"], rec["middle_look"]))
             rec["legs"] = [leg(page, spawn, a, b) for a, b in LEGS]
             # the living room past the coffee table: planner route from the sofa side to the sliding door and back
-            sala = spawn["Sala"]
-            page.evaluate(f"casa.place({sala[0]}, {sala[1]}, {sala[2]})")
-            rt = page.evaluate("(() => { const s = casa.spaces.find((x) => x.name === 'Sala'); return [s.min, s.max]; })()")
+            living = spawn["Living room"]
+            page.evaluate(f"house.place({living[0]}, {living[1]}, {living[2]})")
+            rt = page.evaluate("(() => { const s = house.spaces.find((x) => x.name === 'Living room'); return [s.min, s.max]; })()")
             (x0, _, z0), (x1, _, z1) = rt
             res = []
             for tx, tz in (((x0 + x1) / 2 + 0.6, z1 - 0.6), ((x0 + x1) / 2 - 0.6, z0 + 0.6)):
-                route = page.evaluate(f"casa.plan([[{tx}, {tz}, {sala[1]}]])")
+                route = page.evaluate(f"house.plan([[{tx}, {tz}, {living[1]}]])")
                 if not route or "waypoints" not in route:
                     res.append({"ok": False, "maxDy": 9, "seconds": 0})
                     continue
                 wps = [[w[0], w[1]] for w in route["waypoints"]]
-                res.append(page.evaluate(f"casa.walkRoute({wps}, {{ tol: 0.3, maxSeconds: 20 }})"))
-            rec["sala"] = {"ok": all(w["ok"] and w["maxDy"] <= MAX_DY for w in res), "maxDy": round(max(w["maxDy"] for w in res), 3),
+                res.append(page.evaluate(f"house.walkRoute({wps}, {{ tol: 0.3, maxSeconds: 20 }})"))
+            rec["living"] = {"ok": all(w["ok"] and w["maxDy"] <= MAX_DY for w in res), "maxDy": round(max(w["maxDy"] for w in res), 3),
                            "seconds": round(sum(w["seconds"] for w in res), 2)}
             for k in ("stick_corner_ok", "zone_ok", "look_ok"):
                 if not rec[k]:
                     bad.append(f"{tag}: {k}")
             bad += [f"{tag}: {l}" for l in rec["legs"] if not l["ok"]]
-            if not rec["sala"]["ok"]:
-                bad.append(f"{tag}: sala {rec['sala']}")
+            if not rec["living"]["ok"]:
+                bad.append(f"{tag}: living room {rec['living']}")
             report["viewports"].append(rec)
             print(json.dumps(rec), flush=True)
             page.context.close()

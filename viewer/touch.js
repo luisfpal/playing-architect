@@ -13,10 +13,10 @@ const home = () => ({ x: MARGIN + RADIUS, y: innerHeight - MARGIN - RADIUS });
 const inZone = (x, y) => { const h = home(); return Math.hypot(x - h.x, y - h.y) <= ZONE; };
 
 export function initTouch({ surface, onLook, onInteract }) {
-  const axes = { forward: 0, right: 0, run: false };
+  const axes = { forward: 0, right: 0, run: 0 }; // run 0..1
   const root = document.createElement('div');
   root.id = 'touch';
-  root.innerHTML = '<div id="stickBase"><div id="stickKnob"></div></div><button id="actBtn" aria-label="Interactuar">Abrir</button>';
+  root.innerHTML = '<div id="stickBase"><div id="stickKnob"></div></div><button id="actBtn" aria-label="Interact">Open</button>';
   document.body.appendChild(root);
   const base = root.querySelector('#stickBase'), knob = root.querySelector('#stickKnob'), act = root.querySelector('#actBtn');
   let stick = null, look = null, enabled = false;
@@ -28,7 +28,7 @@ export function initTouch({ surface, onLook, onInteract }) {
   };
   const reset = () => {
     stick = null; look = null;
-    axes.forward = axes.right = 0; axes.run = false;
+    axes.forward = axes.right = 0; axes.run = 0;
     rest();
   };
   addEventListener('resize', () => { if (!stick) rest(); });
@@ -55,14 +55,14 @@ export function initTouch({ surface, onLook, onInteract }) {
       const k = mag < dead ? 0 : (mag - dead) / (1 - dead);
       axes.right = len ? dx / Math.max(len, 1e-6) * k : 0;
       axes.forward = len ? -dy / Math.max(len, 1e-6) * k : 0;
-      axes.run = k > 0.95;
+      axes.run = Math.min(1, Math.max(0, (k - 0.8) / 0.2)); // the last fifth of the stick blends walk into run, no speed cliff
     } else if (look && e.pointerId === look.id) {
       onLook((e.clientX - look.x) * LOOK_BASE, (e.clientY - look.y) * LOOK_BASE);
       look.x = e.clientX; look.y = e.clientY;
     }
   });
   const release = (e) => {
-    if (stick && e.pointerId === stick.id) { stick = null; axes.forward = axes.right = 0; axes.run = false; rest(); }
+    if (stick && e.pointerId === stick.id) { stick = null; axes.forward = axes.right = 0; axes.run = 0; rest(); }
     if (look && e.pointerId === look.id) look = null;
   };
   addEventListener('pointerup', release);
