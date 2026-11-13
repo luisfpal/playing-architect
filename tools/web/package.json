@@ -1,0 +1,13 @@
+{
+  "name": "casa-web-glb",
+  "private": true,
+  "type": "module",
+  "description": "Web delivery of build/casa.glb: tools/web/optimize.mjs (make web-glb). node_modules is gitignored.",
+  "dependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
+    "meshoptimizer": "0.25.0",
+    "sharp": "0.34.5"
+  }
+}
