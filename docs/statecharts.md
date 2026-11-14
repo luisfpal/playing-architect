@@ -47,7 +47,7 @@ Events (the only ways in or out of a state):
 
 ## 2. Build pipeline
 
-Each arrow is a Makefile dependency. A stage that fails stops the chain, so a later stage never runs on a stale or broken earlier artifact. Drawings are off the critical path in round 3 (plans are secondary) but still come from the same IFC.
+Each arrow is a Makefile dependency. A stage that fails stops the chain, so a later stage never runs on a stale or broken earlier artifact. Drawings are off the critical path (the walkable scene comes first) but still come from the same IFC.
 
 ```mermaid
 stateDiagram-v2

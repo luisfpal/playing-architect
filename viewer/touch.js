@@ -6,7 +6,7 @@ const LOOK_BASE = 1; // pixels of drag per pixel of look; main.js scales it to r
 const RADIUS = 56; // joystick travel in CSS px
 const MARGIN = 24; // the resting stick sits this far from the left and bottom edges
 // The corner zone that grabs the joystick: left side, lower part of the screen. Touches outside it look around.
-// R9: the zone is a fixed disc around the resting stick in the bottom-left corner (portrait and landscape alike); the stick never
+// The zone is a fixed disc around the resting stick in the bottom-left corner (portrait and landscape alike); the stick never
 // moves to the thumb. A touch outside the disc, even just above it, looks around.
 const ZONE = RADIUS * 1.6;
 const home = () => ({ x: MARGIN + RADIUS, y: innerHeight - MARGIN - RADIUS });

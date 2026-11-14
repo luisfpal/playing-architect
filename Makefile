@@ -1,6 +1,6 @@
 # playing-architect. Needs: python3, uv (https://docs.astral.sh/uv/), node 20+ (only for optimize).
 GLB      := build/house.glb
-GLB_URL  ?= https://github.com/luisfpal/playing-architect/releases/download/v1.1/house.glb
+GLB_URL  ?= https://github.com/luisfpal/playing-architect/releases/download/v1.2/house.glb
 UVPW     := uv run --no-project --python 3.12 --with playwright
 PORT     ?= 8080
 
@@ -8,7 +8,7 @@ PORT     ?= 8080
 
 all: glb test
 
-# The scene is a release asset (38 MB), not a git object.
+# The scene is a release asset (39 MB), not a git object.
 glb: $(GLB)
 $(GLB):
 	mkdir -p build && curl -fL --retry 3 -o $@ $(GLB_URL)

@@ -1,4 +1,4 @@
-"""R10-7 ladder test, on the real GLB in headless Chromium: the steel ladder on the terrace reaches the laundry roof and is climbable.
+"""Ladder test, on the real GLB in headless Chromium: the steel ladder on the terrace reaches the laundry roof and is climbable.
 
 1. Physics (the same `player.step` the keys and the stick drive): facing the ladder, forward climbs from the terrace (6.40) to the
    roof deck (ladder_top, 9.02) and steps onto it; the player stands grounded on the deck and walks on it; the guard rail stops
