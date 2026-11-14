@@ -5,11 +5,11 @@ import RAPIER from '@dimforge/rapier3d-compat';
 export const RADIUS = 0.25, HEIGHT = 1.7, EYE = 1.6;
 const HALF = (HEIGHT - 2 * RADIUS) / 2;
 export const STEP = 1 / 60;
-// R9: the eye follows the feet with this rate (1/s), so a stair riser climbed by the capsule's autostep reads as a smooth glide
+// The eye follows the feet with this rate (1/s), so a stair riser climbed by the capsule's autostep reads as a smooth glide
 export const EYE_RATE = 7;
 const GRAVITY = 9.81, ACCEL = 14, BRAKE = 22; // m/s^2: reaches walking speed in ~0.14 s, stops in ~0.09 s
 export const WALK = 2.0, RUN = 3.5; // m/s
-// R10-7 fixed ladders (GLB role ladder, extras ladder_top and ladder_front): moving into the ladder climbs, moving away
+// Fixed ladders (GLB role ladder, extras ladder_top and ladder_front): moving into the ladder climbs, moving away
 // descends, at the top the climber steps onto the deck, and walking off the deck over the ladder climbs down. 0.30 m from the face.
 const CLIMB = 0.8, CLIMB_OFF = RADIUS + 0.05;
 
@@ -165,7 +165,7 @@ export async function createPhysics(root) {
       world.step();
       return Math.hypot(m.x, m.z);
     },
-    // Ladder mode (R10-7). Returns true when this step was a ladder step (the walking controller is skipped).
+    // Ladder mode. Returns true when this step was a ladder step (the walking controller is skipped).
     ladderStep(dx, dz) {
       let L = player.climbing;
       const rel = (l) => { const px = feet.x - l.face.x, pz = feet.z - l.face.y; return { off: px * l.n.x + pz * l.n.y, lat: px * l.t.x + pz * l.t.y }; };

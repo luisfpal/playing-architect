@@ -1,4 +1,4 @@
-"""R8-T1 sink visibility in the real viewer (headless Chromium, real keys): the kitchen arrival faces the sink wall, the walker can
+"""Sink visibility in the real viewer (headless Chromium, real keys): the kitchen arrival faces the sink wall, the walker can
 stand within 0.7 m of the counter front facing the sink, and the screenshots (desktop 1280x720 and phone 390x844) are written to the
 folder given as argv[1] (default build/r8_sink_shots). uv run --no-project --python 3.12 --with playwright python viewer/test_sink.py [out]"""
 import json

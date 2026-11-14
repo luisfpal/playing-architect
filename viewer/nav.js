@@ -103,7 +103,7 @@ export function createNav(player) {
         player.yaw = Math.atan2(-(x - f.x), -(z - f.z));
         player.step({ forward: 1, right: 0, run });
         steps++;
-        // R9: the biggest per-frame move of the eye, filtered exactly as main.js does (what the player feels on a stair)
+        // The biggest per-frame move of the eye, filtered exactly as main.js does (what the player feels on a stair)
         const ne = Math.abs(f.y - eye) > 0.5 ? f.y : eye + (f.y - eye) * Math.min(1, STEP * EYE_RATE);
         maxDy = Math.max(maxDy, Math.abs(ne - eye)); eye = ne;
         const fy = player.floorY();

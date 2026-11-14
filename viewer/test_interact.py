@@ -39,7 +39,7 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
     def translate_path(self, path):
-        # HOUSE_GLB=build/web/house.glb runs the same tests on the web copy the site serves (R11)
+        # HOUSE_GLB=build/web/house.glb runs the same tests on the web copy the site serves
         if os.environ.get("HOUSE_GLB") and path.split("?")[0] == "/build/house.glb":
             return str(ROOT / os.environ["HOUSE_GLB"])
         return super().translate_path(path)
