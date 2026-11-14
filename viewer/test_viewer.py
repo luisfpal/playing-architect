@@ -62,7 +62,7 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
     def translate_path(self, path):
-        # HOUSE_GLB=build/web/house.glb runs the same tests on the web copy the site serves (R11)
+        # HOUSE_GLB=build/web/house.glb runs the same tests on the web copy the site serves
         if os.environ.get("HOUSE_GLB") and path.split("?")[0] == "/build/house.glb":
             return str(ROOT / os.environ["HOUSE_GLB"])
         return super().translate_path(path)
@@ -77,6 +77,13 @@ def serve():
 def doc_edges():
     block = re.search(r"```mermaid\n(.*?)```", (ROOT / "docs/statecharts.md").read_text(), re.S).group(1)
     return {(s, ev, t) for s, t, ev in re.findall(r"^\s*(\w+) --> (\w+) : (\w+)", block, re.M)}
+
+
+def seg_dist(q, a, b):
+    """Distance from point q to the segment a-b (2D)."""
+    dx, dz = b[0] - a[0], b[1] - a[1]
+    t = max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / (dx * dx + dz * dz or 1e-12)))
+    return math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dz)
 
 
 def wrap(a):
@@ -133,13 +140,18 @@ class Driver:
             page.keyboard.down("ShiftLeft")
         t = 0.0
         ok = False
+        prev = None
         try:
             while t < timeout:
                 p = self.p
                 fx, _, fz = p["feet"]
-                if math.hypot(x - fx, z - fz) < tol:
+                # arrived if the feet passed within tol of the point since the last sample: on a loaded machine one sample can
+                # be 0.5 m of walking apart, so a point can be crossed between two samples without either being within tol.
+                # Only for route points (tol 0.3); a final stop (tol 0.2) must really be reached, not walked past
+                if math.hypot(x - fx, z - fz) < tol or (prev and tol >= 0.3 and seg_dist((x, z), prev, (fx, fz)) < tol):
                     ok = True
                     break
+                prev = (fx, fz)
                 want = math.atan2(-(x - fx), -(z - fz))
                 err = wrap(want - p["yaw"])
                 if abs(err) > 0.4:  # a sharp turn: stop, turn to face the waypoint, then go (no drifting off a narrow stair)
@@ -279,7 +291,7 @@ SLOPPY_SEEDS = (1, 2, 3)  # human aim error: re-aimed every 0.4 s with up to 0.4
 
 def run_flights(tag, d, spawn):
     """Every flight up and down, three ways: planned route, a human's aim error, and running (Shift). Times are physics seconds.
-    R5-64: the terrace flight takes at most 1.2 x the other flight in each direction and mode."""
+    The terrace flight takes at most 1.2 x the other flight in each direction and mode."""
     ev = d.ev
     secs = {}
     for label, low, high, hy in FLIGHTS:
@@ -308,7 +320,7 @@ def run_flights(tag, d, spawn):
                 j = len(wps) - 1
                 while j > 0 and abs(wps[j - 1][2] - wps[-1][2]) < 0.5:
                     j -= 1
-                # R9: no ramp colliders any more, so the first end-floor waypoint can sit on the bottom tread; walk one
+                # No ramp colliders any more, so the first end-floor waypoint can sit on the bottom tread; walk one
                 # waypoint further (a person steps off the stair) so the check measures the floor, not the last tread
                 wps = wps[i:min(j + 2, len(wps))]
                 ev(f"house.place({wps[0][0]}, {wps[0][2]}, {wps[0][1]})")
@@ -383,7 +395,7 @@ def touch_climb(tag, mp, t, w, h, spawn, a, b):
     if j <= i:  # a route that never changes floor: time the whole walk
         i, j = 0, len(wps) - 1
     t0 = t1 = None
-    lx, ly = 80, h - 80  # R9: the pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
+    lx, ly = 80, h - 80  # The pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
     held, ok = False, True
     for k, (x, z, _y) in enumerate(wps):
         for _ in range(250):
@@ -441,7 +453,7 @@ def main():
             # (b) loaded
             check("b: loading -> orbit", ev("house.state") == "orbit" and ev("house.trace")[:2] == ["loading", "loaded:orbit"], ev("house.trace"))
             info = ev("house.info")
-            check("b: scene budget", 0 < info["triangles"] < 2_400_000, str(info))  # R9: full-detail vehicles (src/render/config.py MAX_TRIANGLES)
+            check("b: scene budget", 0 < info["triangles"] < 2_400_000, str(info))  # Full-detail vehicles (src/render/config.py MAX_TRIANGLES)
             rooms = room_rows(ev)
             check("b: room menu has every spawn", len(rooms) >= 30 and ev("document.querySelectorAll('#menu .room').length") == len(rooms), f"{len(rooms)} rooms")
             shot(page, SHOTS / "orbit.png")
@@ -541,7 +553,10 @@ def main():
             # (m) navigation UI on desktop
             ev("house.send('teleport', 'Bedroom 1')")
             settle(d)
-            page.wait_for_timeout(500)
+            try:  # the HUD refreshes from the render loop: on a loaded machine software GL frames can be seconds apart
+                page.wait_for_function("document.getElementById('roomName').textContent === 'Bedroom 1'", timeout=20000)
+            except Exception:
+                pass
             hud = ev("({room: document.getElementById('roomName').textContent, level: document.getElementById('levelName').textContent, chip: document.getElementById('floorChip').textContent})")
             check("m: HUD shows room, floor and floor chip", hud["room"] == "Bedroom 1" and hud["level"] == "Upper floor" and hud["chip"] == "1F", str(hud))
             ok_map, det = inside_viewport(page, "#minimap")
@@ -659,7 +674,7 @@ def main():
             # (f) stairs. Each flight, both directions, with the real controller on the planned route; heights must be exact
             spawn = {r["name"]: r["spawn"] for r in rooms}
             run_flights("desktop", d, spawn)
-            # R5-15: the double height reads from the dining room just past the entry walkway (looking up) and from the gallery above (looking down)
+            # The double height reads from the dining room just past the entry walkway (looking up) and from the gallery above (looking down)
             for name, room, x, y, pitch, fname in (("entry walkway", "Dining room (double height)", 8.6, 0.0, 0.50, "dh_entry.png"),
                                                    ("gallery", "Gallery", 7.6, 3.2, -0.12, "dh_gallery.png")):
                 ev(f"house.send('teleport', {room!r})")
@@ -709,7 +724,7 @@ def main():
             q = d.p
             near = min((ev(f"house.ray({k * math.pi / 4}, 0.9)") or {"dist": 9})["dist"] for k in range(8))
             check("h: after a corner press and R the player is free and in walk mode", ev("house.state") == "walk" and near >= 0.25, f"nearest wall {near:.2f}, room {q['room']}")
-            # the guest bathroom (the round 3 trap) is entered and left on foot with real keys
+            # the guest bathroom (it once let you in but not out) is entered and left on foot with real keys
             ev("house.send('teleport', 'Hall')")
             settle(d)
             sb = spawn["Guest and pool bathroom"]
@@ -744,7 +759,7 @@ def main():
                 merr = []
                 ctx = browser.new_context(viewport={"width": w, "height": h}, is_mobile=True, has_touch=True, device_scale_factor=2)
                 mp = ctx.new_page()
-                mp.set_default_timeout(120000)  # software GL renders this scene at ~3 s per frame (measured 24 s per tap on the pre-R7 build too)
+                mp.set_default_timeout(120000)  # software GL renders this scene at ~3 s per frame (measured 24 s per tap)
                 watch(mp, merr)
                 mp.goto(f"http://127.0.0.1:{port}/viewer/index.html?ao=0")
                 mp.wait_for_function("window.house && window.house.state !== 'loading'", timeout=120000)
@@ -762,7 +777,7 @@ def main():
                     check(f"n[{label}]: {sel} fits the screen", ok_in, det)
                 act = mev("(() => { const r = document.getElementById('actBtn').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2, r.width, r.height]; })()")
                 check(f"n[{label}]: interact button is at least 44 px", act[2] >= 44 and act[3] >= 44, str(act))
-                lx, ly = 80, h - 80  # R9: the pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
+                lx, ly = 80, h - 80  # The pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
                 # interact button reaches the interaction hook
                 mev("window.__acts = 0; const o = window.houseInteract && window.houseInteract.interact; if (o) window.houseInteract.interact = () => { window.__acts++; return o(); };")
                 t.down(3, act[0], act[1])
@@ -792,7 +807,7 @@ def main():
                 mev("window.dispatchEvent(new Event('blur'))")  # evaluate runs the handler synchronously: the axes are read after it
                 check(f"n[{label}]: blur releases the stick", mev("house.touchAxes")["forward"] == 0)
                 t.up(1)
-                # R5-64 on the phone: every flight and (portrait) every room with the same controller, and the terrace flight climbed
+                # On the phone: every flight and (portrait) every room with the same controller, and the terrace flight climbed
                 # and descended with the real touch joystick and look drag
                 md = Driver(mp)
                 mrooms = room_rows(mev)
@@ -818,7 +833,7 @@ def main():
                 # yaw, so the look check measured the guard instead of the drag. Here the same drag is 0.05 physics seconds.
                 cev("house.send('teleport', 'Living room')")
                 cp.wait_for_function("house.player && house.player.room === 'Living room'", timeout=120000)
-                lx, ly = 80, h - 80  # R9: the pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
+                lx, ly = 80, h - 80  # The pinned stick centre (touch.js MARGIN + RADIUS); the old w*0.2, h*0.75 now falls outside the zone
                 f0 = cev("house.player.feet")
                 ct.drag(1, lx, ly, lx, ly - 55, hold=True)
                 wait_clock(cp, 0.3)

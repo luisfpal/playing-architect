@@ -33,7 +33,7 @@ a minimap and touch controls.
   in headless Chromium. Many bugs only showed up there: a washer door that opened onto a flat panel, or a bathroom you could walk into
   and not get out of.
   The instructions they followed are in [skills/](skills/).
-- **Loading.** About 1 million triangles in a 38 MB GLB. Only lossless steps (meshopt, lossless WebP, pruned
+- **Loading.** About 1 million triangles in a 39 MB GLB. Only lossless steps (meshopt, lossless WebP, pruned
   attributes), checked by rendering the same views before and after ([tools/web/](tools/web/)).
 
 ## Layout
@@ -51,13 +51,18 @@ deploy/      static server (gzip + ETag) and a systemd unit
 ## Run it
 
 ```sh
-make glb      # download the scene (38 MB release asset) to build/house.glb
+make glb      # download the scene (39 MB release asset) to build/house.glb
 make serve    # http://127.0.0.1:8080/
 make test     # headless Chromium: movement at 30/60/120 fps, stairs, every room, doors, drawers, touch, ladder
 ```
 
 Needs Python 3, [uv](https://docs.astral.sh/uv/) and, for `make optimize`, Node 20+. The tests are end to end under
 software rendering, so they take minutes, not seconds.
+
+## Status
+
+Finished in November 2026. The demo runs `main` with the scene from release v1.2. The end-to-end tests pass on that
+build: all 189 viewer checks.
 
 ## Limits
 
